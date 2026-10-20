@@ -15,6 +15,7 @@ from .assets import AssetAgent
 from .audio import verify_audio
 from .contracts import AudioArtifact, RenderArtifact, TechnicalQCArtifact
 from .process import atomic_json, checked_path, json_hash, probe_media, run_checked, sha256_file
+from .progress import RemotionProgress, RenderProgress
 
 
 def validate_probe(probe: dict, *, expected_frames: int, fps: int, width: int, height: int) -> dict[str, bool]:
@@ -60,7 +61,8 @@ class RenderAgent:
         self.video_dir = video_dir or PROJECT_ROOT / "packages" / "video"
 
     def run(self, script: Script, storyboard: Storyboard, audio: AudioArtifact, job_dir: Path,
-            cancelled: Callable[[], bool] | None = None) -> RenderArtifact:
+            cancelled: Callable[[], bool] | None = None,
+            progress: Callable[[RenderProgress], None] | None = None) -> RenderArtifact:
         AssetAgent().run(storyboard)
         verify_audio(audio, script, storyboard, job_dir)
         if not 30 <= audio.duration_ms / 1000 <= 45:
@@ -79,9 +81,18 @@ class RenderAgent:
         props_path = job_dir / "render-props.json"
         atomic_json(props_path, {"storyboard": props})
         partial = job_dir / "output.partial.mp4"
+        parser = RemotionProgress(storyboard.total_frames)
+
+        def observe(chunk: str) -> None:
+            for update in parser.feed(chunk):
+                if progress is not None:
+                    progress(update)
+
         run_checked(["node", str(cli), "render", "src/index.ts", "Short", str(partial),
                      "--props=" + str(props_path), "--codec=h264", "--pixel-format=yuv420p", "--color-space=bt709", "--concurrency=2"],
-                    cwd=self.video_dir, log_path=job_dir / "render.log", timeout=900, cancelled=cancelled)
+                    cwd=self.video_dir, log_path=job_dir / "render.log", timeout=900, cancelled=cancelled,
+                    on_output=observe if progress is not None else None)
+        observe("\n")
         probe = probe_media(partial)
         validate_probe(probe, expected_frames=storyboard.total_frames, fps=storyboard.fps, width=storyboard.width, height=storyboard.height)
         output = job_dir / "output.mp4"

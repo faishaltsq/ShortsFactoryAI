@@ -10,6 +10,8 @@ from ..artifacts import validate_artifact
 from ..config import Settings, get_settings
 from ..orchestration import JobState, JobStore
 from ..orchestration.states import PIPELINE_ORDER, can_transition
+from ..observability.events import safe_text
+from ..observability.lifecycle import RunObserver
 from ..providers import BudgetExceededError, ProviderError, build_router
 from ..schemas import Genre, ResearchResult, Script, Storyboard, TopicCandidate
 
@@ -149,7 +151,8 @@ class PipelineRunner:
         from ..media.render import RenderAgent
         audio = AudioArtifact.model_validate(self._read(job_id, "audio.json"))
         render = RenderAgent().run(self._script_model(job_id), self._storyboard_model(job_id), audio,
-                                   self.store.artifact_root(job_id), cancelled=lambda: self._cancelled(job_id))
+                                   self.store.artifact_root(job_id), cancelled=lambda: self._cancelled(job_id),
+                                   progress=self.observer.render_progress)
         self.store.write_artifact(job_id, "render.json", render.model_dump(mode="json"))
 
     def _technical_qc(self, job_id: str) -> None:
@@ -164,7 +167,9 @@ class PipelineRunner:
     def _draft_checks(self, job_id: str, report: PipelineReport) -> None:
         script, storyboard = self._script_model(job_id), self._storyboard_model(job_id)
         root = self.store.artifact_root(job_id)
-        if not (root / "draft_qc.json").exists():
+        reused_review = (root / "draft_qc.json").exists()
+        if not reused_review:
+            self.observer.started("DRAFT_QC")
             review = QualityAgent(self.router).run(storyboard, script)
             self.store.write_artifact(job_id, "draft_qc.json", review)
         review = self._read(job_id, "draft_qc.json")
@@ -172,10 +177,14 @@ class PipelineRunner:
         report.stages.append(StageReport("DRAFT_QC", passed, "draft_qc.json", detail="draft only; no rendered media verification"))
         if not passed:
             raise ValueError("draft editorial review failed")
-        if not (root / "metadata.json").exists():
+        self.observer.completed("DRAFT_QC", reused=reused_review)
+        reused_metadata = (root / "metadata.json").exists()
+        if not reused_metadata:
+            self.observer.started("METADATA")
             meta = MetadataAgent(self.router).run(script)
             self.store.write_artifact(job_id, "metadata.json", meta.model_dump(mode="json"))
         self._read(job_id, "metadata.json")
+        self.observer.completed("METADATA", reused=reused_metadata)
         report.stages.append(StageReport("METADATA", True, "metadata.json"))
 
     def run(self, job_id: str, *, stop_at: JobState = JobState.STORYBOARD_READY) -> PipelineReport:
@@ -192,8 +201,11 @@ class PipelineRunner:
             return report
         self.router.job_id = job_id
         current_stage = "PREFLIGHT"
+        observer = None
         try:
             mode = "mock" if self.force_mock else "live"
+            observer = self.observer = RunObserver(self.store, job_id, source="mock" if self.force_mock else "production")
+            observer.start()
             prior_mode = record.payload.get("provider_mode")
             if prior_mode and prior_mode != mode:
                 raise ValueError("provider mode cannot change for an existing job")
@@ -215,10 +227,12 @@ class PipelineRunner:
                     if artifact == "review.json" and data["review"]["verdict"] == "reject":
                         raise ValueError("stored creative review rejected script")
                 else:
+                    observer.started(state.value)
                     if state is JobState.RENDERING and self.store.get(job_id).state is JobState.AUDIO_READY:
                         self.store.transition(job_id, state, detail="render started under exclusive job lock")
                     run_stage(job_id)
                     self._read(job_id, artifact)
+                observer.completed(state.value, reused=reused)
                 current = self.store.get(job_id).state
                 if state is not JobState.IDEA_DISCOVERY and current is not state:
                     if can_transition(current, state):
@@ -233,19 +247,27 @@ class PipelineRunner:
                 current_stage = "DRAFT_CHECKS"
                 self._draft_checks(job_id, report)
         except BudgetExceededError as exc:
+            if observer:
+                observer.failed(blocked=True, error_type=type(exc).__name__)
             current = self.store.get(job_id).state
             if can_transition(current, JobState.BLOCKED):
-                self.store.transition(job_id, JobState.BLOCKED, detail=str(exc))
-            report.blocked_reason = str(exc)
-            report.stages.append(StageReport(current_stage, False, detail=str(exc)))
+                self.store.transition(job_id, JobState.BLOCKED, detail=safe_text(str(exc)))
+            report.blocked_reason = safe_text(str(exc))
+            report.stages.append(StageReport(current_stage, False, detail=safe_text(str(exc))))
         except (ProviderError, ValueError, KeyError, OSError, RuntimeError) as exc:
+            if observer:
+                observer.failed(error_type=type(exc).__name__)
             current = self.store.get(job_id).state
-            detail = f"{type(exc).__name__}: {str(exc)[:400]}"
+            detail = safe_text(f"{type(exc).__name__}: {exc}", 400)
             if can_transition(current, JobState.FAILED):
                 self.store.transition(job_id, JobState.FAILED, error=detail)
             report.stages.append(StageReport(current_stage, False, detail=detail))
         finally:
-            self.store.unlock(job_id)
+            try:
+                if observer:
+                    observer.finish(self.store.get(job_id).state.value)
+            finally:
+                self.store.unlock(job_id)
         report.final_state = self.store.get(job_id).state.value
         return report
 
