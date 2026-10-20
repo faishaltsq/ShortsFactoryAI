@@ -31,7 +31,7 @@ Both implemented templates passed standalone `remotion still`. The resume comman
 | Video engine | Working milestone | Two real template implementations, two standalone stills, real validated MP4 |
 | AI pipeline | Mock pipeline working; live incomplete | Adapters, schemas, routing, usage and persistence exist; a complete live-only run has not passed the tightened integration |
 | Audio/visual integration | Core narration path working | Real TTS, measured timing, subtitles, transitions, normalization and technical QC; only generated vectors, no BGM/SFX library |
-| Dashboard/API | Not implemented | Existing directories are reserved, not a running application |
+| Dashboard/API | Working | `apps/api` snapshot/SSE/video routes plus the `apps/dashboard` console; measured in `docs/STUDIO.md` |
 | Automation | Not enabled | SQLite/resume primitives exist; calendar, scheduler, startup recovery service and seven-day backlog remain |
 | Publishing | Not implemented | No OAuth, upload or publishing side effect has occurred |
 
@@ -62,10 +62,14 @@ Both implemented templates passed standalone `remotion still`. The resume comman
 
 ## Build order after this milestone
 
-1. Add FastAPI read/status/artifact routes and a small dashboard previewing the real job artifacts.
+1. ~~Add FastAPI read/status/artifact routes and a small dashboard previewing the real job artifacts.~~ Done: `apps/api` and `apps/dashboard`, measured in `docs/STUDIO.md`.
 2. Add source retrieval, claim verification, originality checks and proper non-mock editorial approval gates.
 3. Add validated licensed assets, the other template renderers, music/SFX mixing and thumbnail generation.
 4. Add seven-day planning and persisted scheduling, owned leases, reboot/interrupt tests, and an explicit operator enable switch.
 5. Implement YouTube OAuth and private-upload-first publication, requiring explicit operator approval before any account or upload action.
+
+## Studio milestone (2026-10-20)
+
+A second verified run, `89dc199b959242b3`, reached `TECHNICAL_QC` through the same pipeline while the console was open: 88.6 s wall, 79.8 s of it the real Remotion/FFmpeg render, 6.9 s real Edge TTS, 16/16 technical checks passed, `-16.01 LUFS`. While it rendered, `/api/studio/snapshot` answered at p50 64 ms (p95 113 ms) with zero failures and all 179 events reached the SSE stream. Full numbers, method and the known limits are in `docs/STUDIO.md`; the artifacts are in `evidence/`.
 
 This checkpoint is ready for an operator-requested commit/push. Git history records the publication state; this document does not imply that the remaining production features are complete.
