@@ -1,0 +1,15 @@
+{
+  "base": "http://127.0.0.1:3018",
+  "ready_ms": 141,
+  "stream_connected_ms": 332,
+  "click_to_inspector_ms": {
+    "samples": 4,
+    "p50": 52,
+    "max": 68
+  },
+  "navigation": {
+    "domContentLoaded": 22,
+    "load": 69
+  },
+  "screenshot": "..\\..\\evidence\\studio-desktop.png"
+}

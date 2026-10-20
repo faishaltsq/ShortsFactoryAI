@@ -1,0 +1,78 @@
+{
+  "job_id": "89dc199b959242b3",
+  "ok": true,
+  "final_state": "TECHNICAL_QC",
+  "blocked_reason": null,
+  "run_wall_seconds": 88.598,
+  "stages": [
+    {
+      "state": "IDEA_DISCOVERY",
+      "ok": true,
+      "elapsed_ms": 39,
+      "detail": ""
+    },
+    {
+      "state": "TOPIC_SELECTED",
+      "ok": true,
+      "elapsed_ms": 48,
+      "detail": ""
+    },
+    {
+      "state": "SCRIPT_GENERATED",
+      "ok": true,
+      "elapsed_ms": 45,
+      "detail": ""
+    },
+    {
+      "state": "CREATIVE_REVIEW",
+      "ok": true,
+      "elapsed_ms": 68,
+      "detail": ""
+    },
+    {
+      "state": "STORYBOARD_READY",
+      "ok": true,
+      "elapsed_ms": 45,
+      "detail": ""
+    },
+    {
+      "state": "ASSETS_READY",
+      "ok": true,
+      "elapsed_ms": 44,
+      "detail": ""
+    },
+    {
+      "state": "AUDIO_READY",
+      "ok": true,
+      "elapsed_ms": 6872,
+      "detail": ""
+    },
+    {
+      "state": "RENDERING",
+      "ok": true,
+      "elapsed_ms": 79759,
+      "detail": ""
+    },
+    {
+      "state": "TECHNICAL_QC",
+      "ok": true,
+      "elapsed_ms": 1577,
+      "detail": ""
+    }
+  ],
+  "api_snapshot_poll_ms": {
+    "samples": 323,
+    "p50": 64.22,
+    "p95": 112.89,
+    "max": 206.7,
+    "failures": 0
+  },
+  "sse_delivery_lag_ms": {
+    "samples": 177,
+    "p50": 213.2,
+    "p95": 467.37,
+    "max": 505.51
+  },
+  "events_written": 179,
+  "events_delivered": 179
+}
