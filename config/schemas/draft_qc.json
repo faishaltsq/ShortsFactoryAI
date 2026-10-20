@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "FactualSection": {
+      "properties": {
+        "pass": {
+          "title": "Pass",
+          "type": "boolean"
+        },
+        "unsupported_claims": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Unsupported Claims",
+          "type": "array"
+        }
+      },
+      "required": [
+        "pass"
+      ],
+      "title": "FactualSection",
+      "type": "object"
+    },
+    "ReviewSection": {
+      "properties": {
+        "pass": {
+          "title": "Pass",
+          "type": "boolean"
+        },
+        "findings": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Findings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "pass"
+      ],
+      "title": "ReviewSection",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "technical": {
+      "$ref": "#/$defs/ReviewSection"
+    },
+    "editorial": {
+      "$ref": "#/$defs/ReviewSection"
+    },
+    "factual": {
+      "$ref": "#/$defs/FactualSection"
+    },
+    "overall": {
+      "pattern": "^(pass|warn|fail)$",
+      "title": "Overall",
+      "type": "string"
+    }
+  },
+  "required": [
+    "technical",
+    "editorial",
+    "factual",
+    "overall"
+  ],
+  "title": "DraftQualityArtifact",
+  "type": "object"
+}

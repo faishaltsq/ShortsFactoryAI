@@ -1,0 +1,157 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "Genre": {
+      "enum": [
+        "educational",
+        "science",
+        "history",
+        "mystery",
+        "fiction",
+        "general_knowledge",
+        "animated_narrative"
+      ],
+      "title": "Genre",
+      "type": "string"
+    },
+    "SourceRef": {
+      "properties": {
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Url"
+        },
+        "publisher": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Publisher"
+        },
+        "published": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Published"
+        },
+        "accessed": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Accessed"
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "title": "SourceRef",
+      "type": "object"
+    },
+    "TopicCandidate": {
+      "properties": {
+        "topic_id": {
+          "title": "Topic Id",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "genre": {
+          "$ref": "#/$defs/Genre"
+        },
+        "hook": {
+          "title": "Hook",
+          "type": "string"
+        },
+        "angle": {
+          "title": "Angle",
+          "type": "string"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/SourceRef"
+          },
+          "title": "Sources",
+          "type": "array"
+        },
+        "verification": {
+          "$ref": "#/$defs/VerificationStatus",
+          "default": "needs_review"
+        },
+        "visual_potential": {
+          "default": 5,
+          "maximum": 10,
+          "minimum": 0,
+          "title": "Visual Potential",
+          "type": "integer"
+        },
+        "novelty": {
+          "default": 5,
+          "maximum": 10,
+          "minimum": 0,
+          "title": "Novelty",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "topic_id",
+        "title",
+        "genre",
+        "hook",
+        "angle"
+      ],
+      "title": "TopicCandidate",
+      "type": "object"
+    },
+    "VerificationStatus": {
+      "enum": [
+        "supported",
+        "needs_review",
+        "unsupported",
+        "fictional"
+      ],
+      "title": "VerificationStatus",
+      "type": "string"
+    }
+  },
+  "properties": {
+    "candidates": {
+      "items": {
+        "$ref": "#/$defs/TopicCandidate"
+      },
+      "title": "Candidates",
+      "type": "array"
+    }
+  },
+  "title": "ResearchResult",
+  "type": "object"
+}

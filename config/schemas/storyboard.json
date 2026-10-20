@@ -1,0 +1,523 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "AnimationSpec": {
+      "properties": {
+        "preset": {
+          "default": "fadeIn",
+          "enum": [
+            "popIn",
+            "slideUp",
+            "wordByWord",
+            "wipeIn",
+            "countUp",
+            "fadeIn"
+          ],
+          "title": "Preset",
+          "type": "string"
+        },
+        "durationInFrames": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Durationinframes"
+        },
+        "intensity": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Intensity"
+        }
+      },
+      "title": "AnimationSpec",
+      "type": "object"
+    },
+    "SceneSpec": {
+      "properties": {
+        "sceneId": {
+          "title": "Sceneid",
+          "type": "string"
+        },
+        "template": {
+          "enum": [
+            "KineticTypography",
+            "MotionComic",
+            "EducationalExplainer",
+            "HistoricalTimeline",
+            "ParallaxStory",
+            "InfographicMotion"
+          ],
+          "title": "Template",
+          "type": "string"
+        },
+        "segment": {
+          "title": "Segment",
+          "type": "string"
+        },
+        "assetRefs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Assetrefs",
+          "type": "array"
+        },
+        "text": {
+          "items": {
+            "$ref": "#/$defs/TextElementSpec"
+          },
+          "title": "Text",
+          "type": "array"
+        },
+        "animation": {
+          "$ref": "#/$defs/AnimationSpec"
+        },
+        "transition": {
+          "$ref": "#/$defs/TransitionSpec"
+        },
+        "audio": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Audio"
+        },
+        "startFrame": {
+          "default": 0,
+          "title": "Startframe",
+          "type": "integer"
+        },
+        "durationInFrames": {
+          "default": 300,
+          "maximum": 3000,
+          "minimum": 30,
+          "title": "Durationinframes",
+          "type": "integer"
+        },
+        "data": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Data"
+        }
+      },
+      "required": [
+        "sceneId",
+        "template",
+        "segment"
+      ],
+      "title": "SceneSpec",
+      "type": "object"
+    },
+    "SubtitleCue": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "startMs": {
+          "minimum": 0,
+          "title": "Startms",
+          "type": "integer"
+        },
+        "endMs": {
+          "minimum": 0,
+          "title": "Endms",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "text",
+        "startMs",
+        "endMs"
+      ],
+      "title": "SubtitleCue",
+      "type": "object"
+    },
+    "TextElementSpec": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "style": {
+          "$ref": "#/$defs/TextStyleSpec"
+        },
+        "inFrame": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Inframe"
+        },
+        "outFrame": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Outframe"
+        }
+      },
+      "required": [
+        "id",
+        "text",
+        "style"
+      ],
+      "title": "TextElementSpec",
+      "type": "object"
+    },
+    "TextStyleSpec": {
+      "properties": {
+        "role": {
+          "enum": [
+            "title",
+            "highlight",
+            "body",
+            "caption",
+            "kicker"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "y": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Y"
+        },
+        "size": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Size"
+        },
+        "color": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Color"
+        },
+        "uppercase": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Uppercase"
+        },
+        "align": {
+          "anyOf": [
+            {
+              "enum": [
+                "left",
+                "center",
+                "right"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Align"
+        },
+        "max_chars_per_line": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Chars Per Line"
+        }
+      },
+      "required": [
+        "role"
+      ],
+      "title": "TextStyleSpec",
+      "type": "object"
+    },
+    "ThemeSpec": {
+      "properties": {
+        "id": {
+          "default": "midnight",
+          "title": "Id",
+          "type": "string"
+        },
+        "background": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Background"
+        },
+        "backgroundAccent": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Backgroundaccent"
+        },
+        "primary": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Primary"
+        },
+        "secondary": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Secondary"
+        },
+        "accent": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Accent"
+        },
+        "fontHeading": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fontheading"
+        },
+        "fontBody": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fontbody"
+        }
+      },
+      "title": "ThemeSpec",
+      "type": "object"
+    },
+    "TransitionSpec": {
+      "properties": {
+        "type": {
+          "default": "fade",
+          "enum": [
+            "none",
+            "fade",
+            "slideUp",
+            "wipe",
+            "zoom"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "durationInFrames": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 10,
+          "title": "Durationinframes"
+        }
+      },
+      "title": "TransitionSpec",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "language": {
+      "default": "id-ID",
+      "title": "Language",
+      "type": "string"
+    },
+    "width": {
+      "default": 1080,
+      "title": "Width",
+      "type": "integer"
+    },
+    "height": {
+      "default": 1920,
+      "title": "Height",
+      "type": "integer"
+    },
+    "fps": {
+      "default": 30,
+      "title": "Fps",
+      "type": "integer"
+    },
+    "theme": {
+      "$ref": "#/$defs/ThemeSpec"
+    },
+    "scenes": {
+      "items": {
+        "$ref": "#/$defs/SceneSpec"
+      },
+      "title": "Scenes",
+      "type": "array"
+    },
+    "subtitles": {
+      "items": {
+        "$ref": "#/$defs/SubtitleCue"
+      },
+      "title": "Subtitles",
+      "type": "array"
+    },
+    "narration": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Narration"
+    },
+    "backgroundMusic": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Backgroundmusic"
+    },
+    "watermark": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Watermark"
+    }
+  },
+  "required": [
+    "id",
+    "scenes"
+  ],
+  "title": "Storyboard",
+  "type": "object"
+}

@@ -1,7 +1,7 @@
 import React from 'react';
 import {AbsoluteFill, Audio, Sequence, interpolate, staticFile, useCurrentFrame, useVideoConfig} from 'remotion';
 import type {SceneSpec, StoryboardSpec, TemplateId} from '../types';
-import {DEFAULT_THEME, THEMES} from '../themes/brand';
+import {resolveTheme} from '../themes/brand';
 import {Subtitles} from '../components/Subtitles';
 import {KineticTypographyScene} from '../compositions/KineticTypography';
 import {EducationalExplainerScene} from '../compositions/EducationalExplainer';
@@ -10,9 +10,10 @@ const renderScene = (scene: SceneSpec, theme: StoryboardSpec['theme'], watermark
   if (scene.template === 'KineticTypography') {
     return <KineticTypographyScene scene={scene} theme={theme} watermark={watermark} />;
   }
-  // Data-driven templates fall back to the explainer renderer until their
-  // dedicated scene modules land in Phase 4.
-  return <EducationalExplainerScene scene={scene} theme={theme} watermark={watermark} />;
+  if (scene.template === 'EducationalExplainer') {
+    return <EducationalExplainerScene scene={scene} theme={theme} watermark={watermark} />;
+  }
+  throw new Error(`Template not implemented: ${scene.template}`);
 };
 
 /** Applies the scene's transition as an in/out opacity (and optional slide) ramp. */
@@ -30,7 +31,10 @@ const TransitionedScene: React.FC<{scene: SceneSpec; children: React.ReactNode}>
     scene.transition.type === 'slideUp'
       ? interpolate(frame, [0, fade], [60, 0], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'})
       : 0;
-  return <AbsoluteFill style={{opacity, transform: `translateY(${translateY}px)`}}>{children}</AbsoluteFill>;
+  const progress = interpolate(frame, [0, fade], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
+  const scale = scene.transition.type === 'zoom' ? 1.08 - progress * 0.08 : 1;
+  const clipPath = scene.transition.type === 'wipe' ? `inset(0 ${(1 - progress) * 100}% 0 0)` : undefined;
+  return <AbsoluteFill style={{opacity, clipPath, transform: `translateY(${translateY}px) scale(${scale})`}}>{children}</AbsoluteFill>;
 };
 
 const ProgressBar: React.FC<{theme: StoryboardSpec['theme']; totalFrames: number}> = ({theme, totalFrames}) => {
@@ -44,7 +48,7 @@ const ProgressBar: React.FC<{theme: StoryboardSpec['theme']; totalFrames: number
 export const Short: React.FC<{storyboard: StoryboardSpec}> = ({storyboard}) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
-  const theme = THEMES[storyboard.theme?.id] ?? storyboard.theme ?? DEFAULT_THEME;
+  const theme = resolveTheme(storyboard.theme);
   const scenes = [...storyboard.scenes].sort((a, b) => a.startFrame - b.startFrame);
   const last = scenes[scenes.length - 1];
   const totalFrames = last ? last.startFrame + last.durationInFrames : fps * 30;

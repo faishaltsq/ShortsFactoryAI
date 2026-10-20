@@ -3,7 +3,12 @@ node_modules/
 __pycache__/
 *.pyc
 .env
-.env.local
+.env.*
+!.env.example
+*.pem
+*.key
+config/client_secret*.json
+config/token*.json
 data/renders/*
 data/jobs/*
 data/assets/*
@@ -17,3 +22,6 @@ out/
 *.log
 .remotion/
 tsconfig.tsbuildinfo
+.pytest_cache/
+.ruff_cache/
+packages/video/public/jobs/

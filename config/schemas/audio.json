@@ -1,0 +1,158 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "AudioSegment": {
+      "properties": {
+        "scene_id": {
+          "title": "Scene Id",
+          "type": "string"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "raw_duration_ms": {
+          "exclusiveMinimum": 0,
+          "title": "Raw Duration Ms",
+          "type": "number"
+        },
+        "duration_frames": {
+          "minimum": 30,
+          "title": "Duration Frames",
+          "type": "integer"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "scene_id",
+        "path",
+        "raw_duration_ms",
+        "duration_frames",
+        "sha256"
+      ],
+      "title": "AudioSegment",
+      "type": "object"
+    },
+    "SubtitleCue": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "startMs": {
+          "minimum": 0,
+          "title": "Startms",
+          "type": "integer"
+        },
+        "endMs": {
+          "minimum": 0,
+          "title": "Endms",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "text",
+        "startMs",
+        "endMs"
+      ],
+      "title": "SubtitleCue",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "engine": {
+      "const": "edge-tts",
+      "default": "edge-tts",
+      "title": "Engine",
+      "type": "string"
+    },
+    "voice": {
+      "title": "Voice",
+      "type": "string"
+    },
+    "rate": {
+      "title": "Rate",
+      "type": "string"
+    },
+    "narration_path": {
+      "title": "Narration Path",
+      "type": "string"
+    },
+    "duration_ms": {
+      "exclusiveMinimum": 0,
+      "title": "Duration Ms",
+      "type": "number"
+    },
+    "sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Sha256",
+      "type": "string"
+    },
+    "script_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Script Sha256",
+      "type": "string"
+    },
+    "storyboard_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Storyboard Sha256",
+      "type": "string"
+    },
+    "fps": {
+      "exclusiveMinimum": 0,
+      "title": "Fps",
+      "type": "integer"
+    },
+    "total_frames": {
+      "exclusiveMinimum": 0,
+      "title": "Total Frames",
+      "type": "integer"
+    },
+    "segments": {
+      "items": {
+        "$ref": "#/$defs/AudioSegment"
+      },
+      "minItems": 1,
+      "title": "Segments",
+      "type": "array"
+    },
+    "cues": {
+      "items": {
+        "$ref": "#/$defs/SubtitleCue"
+      },
+      "minItems": 1,
+      "title": "Cues",
+      "type": "array"
+    },
+    "timing_source": {
+      "const": "edge-tts-word-boundaries+ffprobe",
+      "default": "edge-tts-word-boundaries+ffprobe",
+      "title": "Timing Source",
+      "type": "string"
+    }
+  },
+  "required": [
+    "voice",
+    "rate",
+    "narration_path",
+    "duration_ms",
+    "sha256",
+    "script_sha256",
+    "storyboard_sha256",
+    "fps",
+    "total_frames",
+    "segments",
+    "cues"
+  ],
+  "title": "AudioArtifact",
+  "type": "object"
+}

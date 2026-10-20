@@ -14,8 +14,10 @@ export const KineticTypographyScene: React.FC<{scene: SceneSpec; theme: ThemeSpe
   watermark,
 }) => {
   const frame = useCurrentFrame();
-  const {fps, durationInFrames} = useVideoConfig();
-  const words = scene.segment.split(/\s+/);
+  const {fps} = useVideoConfig();
+  const durationInFrames = scene.durationInFrames;
+  const title = scene.text.find((element) => element.style.role === 'title')?.text ?? scene.segment;
+  const words = title.split(/\s+/);
   const highlightIndex = scene.data?.highlightIndex;
   const hi = typeof highlightIndex === 'number' ? highlightIndex : -1;
 

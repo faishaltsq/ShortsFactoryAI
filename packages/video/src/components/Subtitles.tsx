@@ -6,7 +6,7 @@ export const Subtitles: React.FC<{cues: SubtitleCue[]; theme: ThemeSpec; current
   theme,
   currentFrame,
   fps,
-  bottom = 300,
+  bottom = 360,
 }) => {
   const tMs = (currentFrame / fps) * 1000;
   const active = cues.find((c) => tMs >= c.startMs && tMs < c.endMs);
@@ -22,7 +22,7 @@ export const Subtitles: React.FC<{cues: SubtitleCue[]; theme: ThemeSpec; current
         fontFamily: theme.fontHeading,
         fontSize: 58,
         lineHeight: 1.25,
-        color: '#ffffff',
+        color: theme.primary,
         textShadow: '0 4px 18px rgba(0,0,0,0.85)',
       }}
     >

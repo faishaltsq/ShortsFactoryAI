@@ -1,6 +1,7 @@
 import React from 'react';
 import {CalculateMetadataFunction, Composition, getInputProps} from 'remotion';
-import type {StoryboardSpec} from './types';
+import type {SceneSpec, StoryboardSpec, ThemeSpec} from './types';
+import {resolveTheme} from './themes/brand';
 import {Short} from './compositions/Short';
 import {KineticTypographyScene} from './compositions/KineticTypography';
 import {EducationalExplainerScene} from './compositions/EducationalExplainer';
@@ -20,11 +21,8 @@ const calculateShortMetadata: CalculateMetadataFunction<{storyboard: StoryboardS
 });
 
 /** Single-template compositions exist for preview and per-template QC. */
-const calculateSceneMetadata: CalculateMetadataFunction<{sceneIndex: number; storyboard: StoryboardSpec}> = ({props}) => ({
-  durationInFrames: props.storyboard.scenes[props.sceneIndex]?.durationInFrames ?? 300,
-  fps: props.storyboard.fps,
-  width: props.storyboard.width,
-  height: props.storyboard.height,
+const calculateSceneMetadata: CalculateMetadataFunction<{scene: SceneSpec; theme: ThemeSpec; watermark?: string}> = ({props}) => ({
+  durationInFrames: props.scene.durationInFrames,
 });
 
 export const RemotionRoot: React.FC = () => {
@@ -46,8 +44,8 @@ export const RemotionRoot: React.FC = () => {
       <Composition
         id="KineticTypography"
         component={KineticTypographyScene}
-        defaultProps={{scene: storyboard.scenes[0], theme: storyboard.theme, watermark: storyboard.watermark?.text}}
-        calculateMetadata={calculateSceneMetadata as never}
+        defaultProps={{scene: storyboard.scenes[0], theme: resolveTheme(storyboard.theme), watermark: storyboard.watermark?.text}}
+        calculateMetadata={calculateSceneMetadata}
         durationInFrames={storyboard.scenes[0]?.durationInFrames ?? 300}
         fps={storyboard.fps}
         width={storyboard.width}
@@ -56,8 +54,8 @@ export const RemotionRoot: React.FC = () => {
       <Composition
         id="EducationalExplainer"
         component={EducationalExplainerScene}
-        defaultProps={{scene: storyboard.scenes[1], theme: storyboard.theme, watermark: storyboard.watermark?.text}}
-        calculateMetadata={calculateSceneMetadata as never}
+        defaultProps={{scene: storyboard.scenes[1], theme: resolveTheme(storyboard.theme), watermark: storyboard.watermark?.text}}
+        calculateMetadata={calculateSceneMetadata}
         durationInFrames={storyboard.scenes[1]?.durationInFrames ?? 330}
         fps={storyboard.fps}
         width={storyboard.width}

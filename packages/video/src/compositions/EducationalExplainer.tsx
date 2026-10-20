@@ -20,7 +20,8 @@ export const EducationalExplainerScene: React.FC<{scene: SceneSpec; theme: Theme
   watermark,
 }) => {
   const frame = useCurrentFrame();
-  const {fps, durationInFrames} = useVideoConfig();
+  const {fps} = useVideoConfig();
+  const durationInFrames = scene.durationInFrames;
   const title = scene.text.find((t) => t.style.role === 'title')?.text ?? scene.segment.slice(0, 60);
   const kicker = scene.text.find((t) => t.style.role === 'kicker')?.text ?? scene.sceneId;
   const bullets = bulletsOf(scene);

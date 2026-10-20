@@ -1,0 +1,77 @@
+"""Bounded subprocesses and confined local artifact paths."""
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import subprocess
+import time
+from pathlib import Path
+from typing import Callable
+
+
+def checked_path(root: Path, relative: str) -> Path:
+    path = Path(relative)
+    if path.is_absolute() or ":" in relative or ".." in path.parts:
+        raise ValueError("media path must stay inside the job directory")
+    resolved = (root / path).resolve()
+    if not resolved.is_relative_to(root.resolve()):
+        raise ValueError("media path escaped the job directory")
+    return resolved
+
+
+def sha256_file(path: Path) -> str:
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def json_hash(data: dict) -> str:
+    return hashlib.sha256(json.dumps(data, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
+
+
+def atomic_json(path: Path, data: dict) -> None:
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
+    temporary.replace(path)
+
+
+def _stop_tree(proc: subprocess.Popen) -> None:
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True, timeout=20, check=False)
+    else:
+        proc.terminate()
+    try:
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait(timeout=10)
+
+
+def run_checked(args: list[str], *, log_path: Path, cwd: Path | None = None,
+                timeout: float = 180, cancelled: Callable[[], bool] | None = None) -> None:
+    with log_path.open("ab") as output:
+        proc = subprocess.Popen(args, cwd=cwd, stdout=output, stderr=subprocess.STDOUT, shell=False)
+        deadline = time.monotonic() + timeout
+        try:
+            while proc.poll() is None:
+                if cancelled is not None and cancelled():
+                    raise RuntimeError("job cancelled by operator")
+                if time.monotonic() > deadline:
+                    raise TimeoutError(f"media command exceeded {timeout}s; see {log_path.name}")
+                time.sleep(0.25)
+        except BaseException:
+            if proc.poll() is None:
+                _stop_tree(proc)
+            raise
+        if proc.returncode:
+            raise RuntimeError(f"media command exited {proc.returncode}; see {log_path.name}")
+
+
+def probe_media(path: Path) -> dict:
+    if not path.is_file() or path.stat().st_size == 0:
+        raise ValueError("media artifact is missing or empty")
+    result = subprocess.run(["ffprobe", "-v", "error", "-show_format", "-show_streams", "-of", "json", str(path)],
+                            capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
+    if result.returncode:
+        raise ValueError("ffprobe could not decode media artifact")
+    return json.loads(result.stdout)

@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "title": {
+      "title": "Title",
+      "type": "string"
+    },
+    "description": {
+      "title": "Description",
+      "type": "string"
+    },
+    "tags": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Tags",
+      "type": "array"
+    },
+    "thumbnail": {
+      "additionalProperties": true,
+      "title": "Thumbnail",
+      "type": "object"
+    }
+  },
+  "required": [
+    "title",
+    "description"
+  ],
+  "title": "VideoMetadata",
+  "type": "object"
+}

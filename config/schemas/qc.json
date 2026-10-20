@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "technical_pass": {
+      "title": "Technical Pass",
+      "type": "boolean"
+    },
+    "editorial_pass": {
+      "const": false,
+      "default": false,
+      "title": "Editorial Pass",
+      "type": "boolean"
+    },
+    "factual_pass": {
+      "const": false,
+      "default": false,
+      "title": "Factual Pass",
+      "type": "boolean"
+    },
+    "checks": {
+      "additionalProperties": {
+        "type": "boolean"
+      },
+      "title": "Checks",
+      "type": "object"
+    },
+    "notes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Notes",
+      "type": "array"
+    },
+    "render_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Render Sha256",
+      "type": "string"
+    },
+    "audio_stats": {
+      "additionalProperties": {
+        "type": "number"
+      },
+      "title": "Audio Stats",
+      "type": "object"
+    }
+  },
+  "required": [
+    "technical_pass",
+    "checks",
+    "notes",
+    "render_sha256",
+    "audio_stats"
+  ],
+  "title": "TechnicalQCArtifact",
+  "type": "object"
+}

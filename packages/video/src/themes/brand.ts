@@ -34,3 +34,8 @@ export const THEMES: Record<string, ThemeSpec> = {
 };
 
 export const DEFAULT_THEME = THEMES.midnight;
+
+export const resolveTheme = (theme?: Partial<ThemeSpec>): ThemeSpec => ({
+  ...(THEMES[theme?.id ?? 'midnight'] ?? DEFAULT_THEME),
+  ...Object.fromEntries(Object.entries(theme ?? {}).filter(([, value]) => value != null)),
+});

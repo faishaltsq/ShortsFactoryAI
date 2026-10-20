@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "output_path": {
+      "title": "Output Path",
+      "type": "string"
+    },
+    "sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Sha256",
+      "type": "string"
+    },
+    "storyboard_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Storyboard Sha256",
+      "type": "string"
+    },
+    "audio_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Audio Sha256",
+      "type": "string"
+    },
+    "duration_ms": {
+      "exclusiveMinimum": 0,
+      "title": "Duration Ms",
+      "type": "number"
+    },
+    "frame_count": {
+      "exclusiveMinimum": 0,
+      "title": "Frame Count",
+      "type": "integer"
+    },
+    "probe": {
+      "additionalProperties": true,
+      "title": "Probe",
+      "type": "object"
+    },
+    "composition": {
+      "const": "Short",
+      "default": "Short",
+      "title": "Composition",
+      "type": "string"
+    }
+  },
+  "required": [
+    "output_path",
+    "sha256",
+    "storyboard_sha256",
+    "audio_sha256",
+    "duration_ms",
+    "frame_count",
+    "probe"
+  ],
+  "title": "RenderArtifact",
+  "type": "object"
+}
