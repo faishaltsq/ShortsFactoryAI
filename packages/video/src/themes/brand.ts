@@ -1,0 +1,36 @@
+import type {ThemeSpec} from '../types';
+
+export const THEMES: Record<string, ThemeSpec> = {
+  midnight: {
+    id: 'midnight',
+    background: '#0b1020',
+    backgroundAccent: '#141b34',
+    primary: '#f5f7ff',
+    secondary: '#9fb0d8',
+    accent: '#ffb02e',
+    fontHeading: '"Arial Black", "Segoe UI", sans-serif',
+    fontBody: '"Segoe UI", Arial, sans-serif',
+  },
+  ember: {
+    id: 'ember',
+    background: '#1a0f0d',
+    backgroundAccent: '#2a1713',
+    primary: '#fff6ef',
+    secondary: '#d9b3a5',
+    accent: '#ff5a3c',
+    fontHeading: '"Arial Black", "Segoe UI", sans-serif',
+    fontBody: '"Segoe UI", Arial, sans-serif',
+  },
+  verdant: {
+    id: 'verdant',
+    background: '#071410',
+    backgroundAccent: '#0d231b',
+    primary: '#f0fff8',
+    secondary: '#8fc7ae',
+    accent: '#38e08a',
+    fontHeading: '"Arial Black", "Segoe UI", sans-serif',
+    fontBody: '"Segoe UI", Arial, sans-serif',
+  },
+};
+
+export const DEFAULT_THEME = THEMES.midnight;
