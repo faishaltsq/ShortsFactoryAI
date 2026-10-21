@@ -33,6 +33,11 @@ def test_get_studio_returns_saved_effective_defaults_and_agent_keys(tmp_path, mo
     assert set(body["agent_keys"]) == set(AGENT_KEYS)
     assert body["default_prompts"]["ScriptAgent"] == prompts.SCRIPT_SYSTEM
     assert body["runner_stops"] == ["research", "script", "creative", "storyboard", "audio", "render"]
+    # Roster persona: UI merender tiap agent sebagai orang, bukan identifier telanjang.
+    assert set(body["personas"]) == set(AGENT_KEYS)
+    assert body["personas"]["ScriptAgent"]["tier"] == "worker"
+    assert body["personas"]["CreativeDirectorAgent"]["tier"] == "strategist"
+    assert body["personas"]["ScriptAgent"]["stage"] == "SCRIPT_GENERATED"
 
 
 def test_put_studio_validates_and_persists(tmp_path, monkeypatch):

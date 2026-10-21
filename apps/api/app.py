@@ -19,6 +19,7 @@ from packages.core.config import JOBS_DIR, get_settings
 from packages.core.orchestration import JobState, JobStore
 from packages.core.orchestration.states import STOP_POINTS
 from packages.core.pipeline import PipelineRunner
+from packages.core.personas import PERSONAS
 from packages.core.prompts import DEFAULT_SYSTEM
 from packages.core.providers.router import UsageTracker, build_router
 from packages.core.studio import (
@@ -96,6 +97,7 @@ def get_studio_payload(authorization: str | None = Depends(require_token)) -> di
         "agent_keys": list(AGENT_KEYS),
         "default_prompts": dict(DEFAULT_SYSTEM),
         "runner_stops": list(STOP_POINTS),
+        "personas": {k: dict(v) for k, v in PERSONAS.items()},
         "studio_path": str(studio_path()),
         "studio_exists": studio_path().exists(),
     }
