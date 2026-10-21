@@ -10,6 +10,7 @@ import datetime as dt
 import json
 import os
 import re
+import time
 from pathlib import Path
 from typing import Literal
 
@@ -173,5 +174,14 @@ def save_studio(config: StudioConfig, path: Path | None = None) -> Path:
             old.unlink(missing_ok=True)
     tmp = target.with_suffix(target.suffix + ".tmp")
     tmp.write_text(payload, encoding="utf-8")
-    tmp.replace(target)
+    # Windows menahan handle baca sesaat (runner yang sedang memanggil load_studio,
+    # indexer, AV), jadi replace diulang dalam jendela ~1 detik.
+    for attempt in range(20):
+        try:
+            tmp.replace(target)
+            break
+        except PermissionError:
+            if attempt == 19:
+                raise
+            time.sleep(0.05)
     return target
