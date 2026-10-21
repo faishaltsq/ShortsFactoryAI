@@ -178,7 +178,8 @@ class PipelineRunner:
         self._read(job_id, "metadata.json")
         report.stages.append(StageReport("METADATA", True, "metadata.json"))
 
-    def run(self, job_id: str, *, stop_at: JobState = JobState.STORYBOARD_READY) -> PipelineReport:
+    def run(self, job_id: str, *, stop_at: JobState = JobState.STORYBOARD_READY,
+            cancelled=None) -> PipelineReport:
         stages = self._stages()
         if stop_at not in {state for state, _, _ in stages}:
             raise ValueError(f"unsupported stop: {stop_at.value}")
@@ -207,6 +208,9 @@ class PipelineRunner:
                 current_stage = state.value
                 if self.store.get(job_id).state is JobState.CANCELLED:
                     report.blocked_reason = "cancelled by operator"
+                    break
+                if cancelled is not None and callable(cancelled) and cancelled():
+                    report.blocked_reason = "dibatalkan operator"
                     break
                 started = time.perf_counter()
                 reused = (self.store.artifact_root(job_id) / artifact).exists()
