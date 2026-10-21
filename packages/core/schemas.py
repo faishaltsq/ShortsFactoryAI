@@ -14,6 +14,7 @@ TemplateId = Literal[
     "HistoricalTimeline",
     "ParallaxStory",
     "InfographicMotion",
+    "IllustratedStory",
 ]
 
 ALLOWED_TEMPLATES = {
@@ -23,6 +24,7 @@ ALLOWED_TEMPLATES = {
     "HistoricalTimeline",
     "ParallaxStory",
     "InfographicMotion",
+    "IllustratedStory",
 }
 
 
