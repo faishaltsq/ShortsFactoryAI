@@ -27,6 +27,20 @@ cd ../..
 
 FFmpeg, FFprobe, Node and uv must be on PATH. The existing shell may export `NODE_ENV=production`; `--include=dev` is deliberate.
 
+## Windows launchers
+
+Two double-clickable wrappers sit at the repository root. Both check prerequisites before doing anything and print the missing step instead of failing deep inside a stage.
+
+| File | Action |
+| --- | --- |
+| `run-demo.bat` | Runs the mock-content demo to `READY_FOR_APPROVAL` and keeps the window open with the exit code |
+| `run-demo.bat --resume JOB_ID` | Reuses a completed job's media instead of creating a new one |
+| `run-demo.bat --check` | Verifies uv, Node, FFmpeg, FFprobe, the venv and video dependencies, then exits |
+| `start-studio.bat` | Opens the API (`127.0.0.1:8018`) and the dashboard dev server (`127.0.0.1:3018`) in two windows |
+| `start-studio.bat --check` | Verifies uv, npm, the venv and dashboard dependencies, then exits |
+
+The launchers never enable the scheduler, never approve a job and never publish anything.
+
 ## Produce a local demo
 
 Run from the repository root:
@@ -51,6 +65,7 @@ The verified local sample is `data/jobs/45dd2b1b1b914db0/output.mp4`: 36.608 sec
 - `--live` selects configured model adapters and disables mock fallback. Unavailable providers cause an explicit failed/blocked job.
 - The worker model configured in this environment is `tig/deepseek-v4.1-flash` on the local router.
 - The strategist CLI uses the configured alias `opus`. That alias is **not evidence of the exact Claude Opus 5.5 model/version**.
+- The strategist chain is `claude-cli` → `codex-cli` → mock, so a failed Claude CLI call falls through to the locally authenticated Codex CLI (`CODEX_CLI_MODEL`, default `gpt-6.1-sol`) before any fixture is used. The Codex adapter runs `codex exec --json` in a throwaway read-only directory with shell, browser, computer-use, plugin and multi-agent features disabled, and never echoes CLI diagnostics because they can contain credential fragments.
 - Claude completions disable tools, inherited MCP servers and session persistence; prompts are supplied over stdin. These tightened options have adapter tests and were checked against the installed CLI help. A full live production run with these options has not been revalidated.
 - `scripts/probe_providers.py` reports availability without a completion by default. Its explicit `--live` diagnostic spends a completion per live adapter and is not a production job. Production usage accounting should be used for budget-controlled runs instead.
 - Daily usage is persisted per job. The current USD rates are **unverified estimates**, not the third-party provider's invoice. The guard checks recorded totals before calls; it is not a concurrent cost reservation or a strict provider-side spending cap. Do not treat this milestone as an unattended paid runner.
