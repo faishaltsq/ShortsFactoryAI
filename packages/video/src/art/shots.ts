@@ -42,7 +42,9 @@ export const shotAt = (
 };
 
 export const FRAMING_SCALE: Record<IllustrationShot['framing'], number> = {
+  // Kept deliberately gentle: the stage anchors at the subject's ground line, so a
+  // larger factor pushes the character's head into the title band.
   wide: 1,
-  medium: 1.3,
-  close: 1.66,
+  medium: 1.12,
+  close: 1.3,
 };

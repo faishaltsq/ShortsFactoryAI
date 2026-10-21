@@ -111,8 +111,10 @@ export const Figure: React.FC<{
           <Limb from={SHOULDER.right} upper={64} lower={58} angle={pose.armR + walk * 0.7} width={20} color={limbColor} cap="hand" capColor={skin} />
           <g transform={`rotate(${pose.torso + pose.head} 100 152)`}>
             <circle cx={100} cy={116} r={42} fill={ink} />
-            <path d="M58 106 Q100 48 142 106 Q120 86 100 90 Q80 86 58 106Z" fill={shade(body, 0.3)} />
-            <path d="M60 104 Q100 62 140 104" stroke={rim} strokeWidth={5} fill="none" strokeLinecap="round" />
+            {/* Hair: a single cap that hugs the skull. The earlier crescent read as a glitch. */}
+            <path d="M59 108 A41 41 0 0 1 141 108 Q120 92 100 92 Q80 92 59 108Z" fill={shade(body, 0.34)} />
+            {/* Rim light: a short arc on the key-light edge only, never across the face. */}
+            <path d="M63 100 A40 40 0 0 1 92 77" stroke={rim} strokeWidth={5} fill="none" strokeLinecap="round" />
             {actor.silhouette ? null : (
               <g>
                 {blink ? (

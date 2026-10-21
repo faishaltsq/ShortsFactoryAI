@@ -27,6 +27,10 @@ export const IllustratedStoryScene: React.FC<SceneProps> = ({scene, theme: input
   const title = data.title ?? scene.text.find((t) => t.style.role === 'title')?.text ?? '';
   const kicker = scene.text.find((t) => t.style.role === 'kicker')?.text ?? '';
   const entrance = slideUp({frame: span.local, fps, durationInFrames: 16, intensity: 0.4});
+  // An editor titles the establishing shot and lets the close-up play clean: the
+  // subject is the message once the frame tightens. Keeping the title on every
+  // framing buries the hero under type.
+  const showTitle = span.shot.framing === 'wide';
 
   return (
     <div style={{position: 'absolute', inset: 0, overflow: 'hidden', background: palette.skyTop}}>
@@ -38,16 +42,16 @@ export const IllustratedStoryScene: React.FC<SceneProps> = ({scene, theme: input
 
       {watermark ? <Watermark text={watermark} theme={theme} /> : null}
 
-      {title ? (
+      {title && showTitle ? (
         <div
           style={{
             ...entrance,
             position: 'absolute',
-            top: 300,
+            top: 268,
             left: 72,
             right: 72,
             fontFamily: theme.fontHeading,
-            fontSize: 72,
+            fontSize: 64,
             lineHeight: 1.08,
             color: theme.primary,
             textShadow: '0 6px 26px rgba(0,0,0,0.65)',
@@ -58,11 +62,11 @@ export const IllustratedStoryScene: React.FC<SceneProps> = ({scene, theme: input
         </div>
       ) : null}
 
-      {kicker ? (
+      {kicker && showTitle ? (
         <div
           style={{
             position: 'absolute',
-            top: 268,
+            top: 232,
             left: 72,
             fontFamily: theme.fontBody,
             fontSize: 30,
@@ -76,7 +80,7 @@ export const IllustratedStoryScene: React.FC<SceneProps> = ({scene, theme: input
         </div>
       ) : null}
 
-      {data.caption ? (
+      {data.caption && showTitle ? (
         <div
           style={{
             position: 'absolute',

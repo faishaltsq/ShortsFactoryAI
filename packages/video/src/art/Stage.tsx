@@ -13,7 +13,9 @@ export const Stage: React.FC<{
   progress: number;
   scale: number;
 }> = ({data, palette, frame, progress, scale}) => (
-  <div style={{position: 'absolute', inset: 0, transform: `scale(${scale})`, transformOrigin: '50% 54%'}}>
+  // transformOrigin sits on the subject's ground line, so a tighter framing crops
+  // the sky instead of pushing the character's head into the title band.
+  <div style={{position: 'absolute', inset: 0, transform: `scale(${scale})`, transformOrigin: '50% 78%'}}>
     {data.imageRef ? (
       <Img
         src={staticFile(data.imageRef)}
