@@ -57,6 +57,13 @@ All six names are registered as standalone compositions with `{scene, theme}` me
 - `HistoricalTimeline`: `data={title?, events:[{date, label, detail?}]}`; 2–4 events in supplied order. The renderer does not invent dates or evidence.
 - `ParallaxStory`: `data={title, caption?, layers:[{depth, shape? , assetRef?}]}`; 1–4 layers, depth 0.1–1. Each requires exactly one staged image reference or a named project-created shape (`ridge`, `city`, `circle`).
 - `InfographicMotion`: `data={title, items:[{label, value, unit?}], maxValue?, decimals?}`; 1–4 finite nonnegative values; decimals 0–2. A supplied positive maxValue must cover every value. Counters snap to the exact final value.
+- `IllustratedStory`: `data={setting, timeOfDay?, title?, caption?, imageRef?, actors?, props?, fx?, shots?}`.
+  Only `setting` is required; `actors`/`props`/`fx` default to empty and `shots` defaults to one `wide`/`pushIn`.
+  Vocabulary is closed: seven settings, seven poses, fourteen prop kinds, six effects, three framings, seven camera moves.
+  The scene is split into 1–4 weighted shots with hard cuts; the camera moves inside each shot; the character rig
+  animates poses, walk cycles, breathing, blink and hair sway from the frame number only.
+  `imageRef` is an operator-supplied licensed plate: it must also appear in `scene.assetRefs`, and it is drawn
+  beneath the vector art so real imagery can be used without any paid generation service.
 
 Images in panels/layers must also occur in `scene.assetRefs`. Typography/colors come from theme tokens. New narrative layouts are confined to top 260px/bottom 320px safe areas. Backgrounds and decorative watermark elements are not narrative text.
 

@@ -11,6 +11,7 @@ Local-first Indonesian YouTube Shorts production engine. Python owns orchestrati
 - Local licensed-asset manifests, optional music/SFX mixing, Indonesian Edge TTS, word-boundary subtitles, and narration-measured scene timing.
 - H.264/AAC MP4, 1080×1920 PNG thumbnails, technical QC, and checksum-verified warm resume.
 - FastAPI read-only studio with Next.js dashboard; explicit local CLI approval and private-first YouTube publishing commands. No account is connected by default.
+- `IllustratedStory` template: procedural vector illustration (environments, posed characters, props, atmosphere, virtual camera, shot cuts) driven by validated JSON — no image-generation service and no operator-supplied media required.
 
 ## Requirements and installation
 
