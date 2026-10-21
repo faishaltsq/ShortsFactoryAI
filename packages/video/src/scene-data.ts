@@ -77,6 +77,7 @@ export function validateSceneData(scene: SceneSpec): void {
       break;
     }
     case 'KineticTypography': case 'EducationalExplainer': break;
+    case 'IllustratedStory': validateIllustrationData(scene.data); break;
     default: throw new Error(`Unsupported template: ${scene.template}`);
   }
   for (const ref of scene.assetRefs) localImage(ref);
