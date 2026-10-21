@@ -8,6 +8,8 @@ from functools import lru_cache
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from .studio import StudioConfig, StudioConfigError, load_studio
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]  # .../ShortsFactoryAI
 DATA_DIR = PROJECT_ROOT / "data"
 JOBS_DIR = DATA_DIR / "jobs"
@@ -46,11 +48,29 @@ def _float(name: str, default: float) -> float:
         return default
 
 
+
+def _studio() -> StudioConfig | None:
+    try:
+        return load_studio()
+    except StudioConfigError:
+        # File rusak tidak boleh membuat CLI crash; API yang menampilkannya.
+        return None
+
+
+def _sget(section: str, key: str, fallback):
+    """studio.json > env > default bawaan. Rahasia tidak pernah lewat sini."""
+    cfg = _studio()
+    if cfg is None:
+        return fallback
+    value = getattr(getattr(cfg, section), key)
+    return fallback if value is None else value
+
+
 @dataclass(frozen=True)
 class BudgetConfig:
-    max_daily_tokens: int = field(default_factory=lambda: _int("MAX_DAILY_TOKEN_BUDGET", 400_000))
-    max_daily_cost_usd: float = field(default_factory=lambda: _float("MAX_DAILY_COST_USD", 2.0))
-    max_retries: int = field(default_factory=lambda: _int("MAX_RETRIES", 5))
+    max_daily_tokens: int = field(default_factory=lambda: int(_sget("budget", "max_daily_tokens", _int("MAX_DAILY_TOKEN_BUDGET", 400_000))))
+    max_daily_cost_usd: float = field(default_factory=lambda: float(_sget("budget", "max_daily_cost_usd", _float("MAX_DAILY_COST_USD", 2.0))))
+    max_retries: int = field(default_factory=lambda: int(_sget("budget", "max_retries", _int("MAX_RETRIES", 5))))
     request_timeout_s: int = field(default_factory=lambda: _int("PROVIDER_TIMEOUT_S", 120))
 
 
@@ -88,12 +108,12 @@ class ProductionConfig:
     language: str = field(default_factory=lambda: os.environ.get("VIDEO_LANGUAGE", "id-ID"))
     width: int = field(default_factory=lambda: _int("VIDEO_WIDTH", 1080))
     height: int = field(default_factory=lambda: _int("VIDEO_HEIGHT", 1920))
-    fps: int = field(default_factory=lambda: _int("VIDEO_FPS", 30))
-    target_duration_s: int = field(default_factory=lambda: _int("VIDEO_DURATION_SEC", 40))
-    videos_per_day: int = field(default_factory=lambda: _int("VIDEOS_PER_DAY", 1))
+    fps: int = field(default_factory=lambda: int(_sget("production", "fps", _int("VIDEO_FPS", 30))))
+    target_duration_s: int = field(default_factory=lambda: int(_sget("production", "target_duration_s", _int("VIDEO_DURATION_SEC", 40))))
+    videos_per_day: int = field(default_factory=lambda: int(_sget("production", "videos_per_day", _int("VIDEOS_PER_DAY", 1))))
     plan_days: int = field(default_factory=lambda: _int("PLAN_DAYS", 7))
-    tts_voice: str = field(default_factory=lambda: os.environ.get("TTS_VOICE", "id-ID-ArdiNeural"))
-    tts_rate: str = field(default_factory=lambda: os.environ.get("TTS_RATE", "+0%"))
+    tts_voice: str = field(default_factory=lambda: str(_sget("production", "tts_voice", os.environ.get("TTS_VOICE", "id-ID-ArdiNeural"))))
+    tts_rate: str = field(default_factory=lambda: str(_sget("production", "tts_rate", os.environ.get("TTS_RATE", "+0%"))))
 
 
 @dataclass(frozen=True)
