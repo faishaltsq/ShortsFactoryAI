@@ -23,7 +23,9 @@ FFprobe checks, checksum verification and FFmpeg black/silence/freeze scanning p
 
 Both implemented templates passed standalone `remotion still`. The resume command reused the completed media and did not make another provider or TTS call.
 
-## Phase assessment
+## Phase assessment (original media milestone; current status below)
+
+The table and historical build order below describe the earlier two-template checkpoint. For the current six-template, approval and publishing status, use the production completion milestone and `docs/superpowers/plans/2026-10-21-production-completion.md`.
 
 | Phase | State | Evidence or missing work |
 | --- | --- | --- |
@@ -32,8 +34,8 @@ Both implemented templates passed standalone `remotion still`. The resume comman
 | AI pipeline | Mock pipeline working; live incomplete | Adapters, schemas, routing, usage and persistence exist; a complete live-only run has not passed the tightened integration |
 | Audio/visual integration | Core narration path working | Real TTS, measured timing, subtitles, transitions, normalization and technical QC; only generated vectors, no BGM/SFX library |
 | Dashboard/API | Working | `apps/api` snapshot/SSE/video routes plus the `apps/dashboard` console; measured in `docs/STUDIO.md` |
-| Automation | Not enabled | SQLite/resume primitives exist; calendar, scheduler, startup recovery service and seven-day backlog remain |
-| Publishing | Not implemented | No OAuth, upload or publishing side effect has occurred |
+| Automation | Implemented, disabled by default | Seven-day planner, persisted dispatch, token-owned leases and retry caps live in `packages/core/orchestration/{planner,scheduler,leases}.py` with `scripts/schedule.py` and `docs/SCHEDULER.md`; the operator enable switch defaults off and no startup registration was added |
+| Publishing | Implemented offline, never exercised live | Installed-app OAuth, resumable transport, private-first receipts and uncertain-recovery in `packages/core/publishing/`, `scripts/publish.py`, `docs/PUBLISHING.md`. No account was connected, no upload happened, nothing was scheduled remotely |
 
 ## Changes delivered in this milestone
 
@@ -73,3 +75,26 @@ Both implemented templates passed standalone `remotion still`. The resume comman
 A second verified run, `89dc199b959242b3`, reached `TECHNICAL_QC` through the same pipeline while the console was open: 88.6 s wall, 79.8 s of it the real Remotion/FFmpeg render, 6.9 s real Edge TTS, 16/16 technical checks passed, `-16.01 LUFS`. While it rendered, `/api/studio/snapshot` answered at p50 64 ms (p95 113 ms) with zero failures and all 179 events reached the SSE stream. Full numbers, method and the known limits are in `docs/STUDIO.md`; the artifacts are in `evidence/`.
 
 This checkpoint is ready for an operator-requested commit/push. Git history records the publication state; this document does not imply that the remaining production features are complete.
+
+## Production completion milestone (2026-10-21)
+
+The pre-approval pipeline now produces and validates the full artifact set — `metadata.json`, `assets.json`, `thumbnail.json`, `audio.json` with an embedded mix receipt — and approval refuses to open unless each one validates against its schema and its media hashes and dimensions match.
+
+| Property | Observed result |
+| --- | --- |
+| Job | `45dd2b1b1b914db0`, "Mengapa gurun menjadi dingin di malam hari" |
+| State | `READY_FOR_APPROVAL` after 64 s wall (6 s TTS, 53 s render, ~4 s thumbnail) |
+| Thumbnail | `thumbnail.png`, 1080×1920, 1,002,505 bytes, scene `scene-01` frame 134 |
+| Approval | `eligible: true`, 10/10 checks pass, zero blockers |
+| Checks | technical_qc, editorial_review, source_verification, originality, metadata, assets, audio, render, media_integrity, thumbnail |
+| Warm resume | 1.86 s wall, no TTS, no provider call, no re-render, state unchanged |
+| Offline suite | 451 pytest tests, Ruff clean, `tsc --noEmit` clean in `packages/video` and `apps/dashboard`, 13 dashboard unit tests, dashboard build green |
+| Video stills | All six templates pass standalone `remotion still` |
+
+Approval binds to artifact and media fingerprints, so editing `script.json`, `metadata.json` or any validated media after approval invalidates it. `thumbnail.json` and `mix.json` are registered in `ARTIFACT_MODELS` and exported to `config/schemas/`; `audio.json` remains the authoritative mix receipt and `mix.json` is its inspection copy. The thumbnail is served read-only: `GET /api/jobs/{id}/thumbnail` returns the PNG only after the recorded SHA-256 matches, and the console shows the thumbnail plus any approval blockers next to the job.
+
+The pipeline renews its token-owned lease during long stages and checks ownership before state transitions. Concurrency tests cover a blocked stage and an expired lease taken by another worker; the old worker stops without marking the job failed.
+
+Creative review persists `creative_draft.json` before revising the script and writes `review.json` only after verification and originality evidence complete. Resume repairs a missing evidence sidecar or interrupted revision without repeating the creative model call; a draft with changed script inputs is rejected.
+
+Unverified live surface: no YouTube account was connected, no upload occurred, no remote schedule exists, and no paid-model run was executed. Deleting `data/jobs/factory.db` would drop job rows while artifact directories survive; recovery from that state is manual.

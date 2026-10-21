@@ -26,6 +26,8 @@ STOPS = {
     "storyboard": JobState.STORYBOARD_READY,
     "audio": JobState.AUDIO_READY,
     "render": JobState.TECHNICAL_QC,
+    "editorial": JobState.EDITORIAL_QC,
+    "approval": JobState.READY_FOR_APPROVAL,
 }
 
 

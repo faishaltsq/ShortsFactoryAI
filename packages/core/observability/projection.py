@@ -49,10 +49,26 @@ class StudioService:
             raise ValueError("validated video is unavailable")
         return path
 
+    def thumbnail_path(self, job_id: str) -> Path:
+        self.store.get(job_id)
+        thumb = self._artifact(job_id, "thumbnail.json")
+        if not thumb:
+            raise ValueError("validated thumbnail is unavailable")
+        path = checked_path(self.job_root(job_id), thumb["output_path"])
+        if not path.is_file() or path.stat().st_size == 0 or sha256_file(path) != thumb["sha256"]:
+            raise ValueError("validated thumbnail is unavailable")
+        with path.open("rb") as source:
+            header = source.read(24)
+        if len(header) != 24 or header[:8] != b"\x89PNG\r\n\x1a\n":
+            raise ValueError("validated thumbnail is unavailable")
+        return path
+
     def _job_view(self, row: dict, mode: str) -> dict:
         render = self._artifact(row["id"], "render.json")
         qc = self._artifact(row["id"], "qc.json")
         script = self._artifact(row["id"], "script.json")
+        editorial = self._artifact(row["id"], "editorial_qc.json")
+        verification = self._artifact(row["id"], "verification.json")
         available = False
         if render:
             try:
@@ -62,14 +78,29 @@ class StudioService:
                 available = False
         suffix = "?demo=true" if mode == "demo" else ""
         technical = qc["technical_pass"] if qc and render and qc["render_sha256"] == render["sha256"] else None
+        approval = self._artifact(row["id"], "approval.json")
+        thumb = self._artifact(row["id"], "thumbnail.json")
+        thumb_ok = False
+        if thumb:
+            try:
+                thumb_ok = (checked_path(self.job_root(row["id"]), thumb["output_path"]).stat().st_size > 0)
+            except (OSError, ValueError):
+                thumb_ok = False
         return {
             "id": row["id"], "title": safe_text(row["title"], 160), "state": row["state"],
             "source": job_source(row["payload"]), "created_at": row["created_at"], "updated_at": row["updated_at"],
             "approval_required": row["state"] == "READY_FOR_APPROVAL",
+            "approval": {"eligible": approval["eligible"] if approval else None,
+                         "blockers": [safe_text(b, 160) for b in approval.get("blockers", [])][:12] if approval else []},
+            "thumbnail": {"available": thumb_ok,
+                          "url": f"/api/jobs/{row['id']}/thumbnail{suffix}" if thumb_ok else None},
             "video": {"available": available, "url": f"/api/jobs/{row['id']}/video{suffix}" if available else None,
                       "duration_ms": render["duration_ms"] if render and available else None},
-            "quality": {"technical": technical, "editorial": None,
-                        "verification": script.get("verification_status", "unverified") if script else "unverified",
+            "quality": {"technical": technical,
+                        "editorial": (editorial["overall"] == "pass" and
+                                      all(check["pass"] for check in editorial["checks"])) if editorial else None,
+                        "verification": verification["status"] if verification else (
+                            script.get("verification_status", "unverified") if script else "unverified"),
                         "checks": qc["checks"] if qc and technical is not None else {}},
         }
 

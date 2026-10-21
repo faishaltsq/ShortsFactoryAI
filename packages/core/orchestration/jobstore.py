@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 import sqlite3
 import threading
+import time
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from ..artifacts import validate_artifact
 from .states import ARTIFACT_FOR_STATE, PIPELINE_ORDER, JobState, assert_transition
@@ -32,11 +34,18 @@ class JobRecord:
     last_error: str | None = None
 
 
+class ConcurrentTransition(ValueError):
+    """The persisted job state changed since the caller read it."""
+
+
 class JobStore:
-    def __init__(self, db_path: Path, artifacts_root: Path) -> None:
+    def __init__(self, db_path: Path, artifacts_root: Path, *,
+                 clock: Callable[[], datetime] | None = None) -> None:
         self.db_path = db_path
         self.artifacts_root = artifacts_root
         self._lock = threading.Lock()
+        self._legacy_tokens: dict[str, str] = {}
+        self._clock = clock or (lambda: datetime.now(timezone.utc))
         self._init_db()
 
     def _connect(self) -> sqlite3.Connection:
@@ -74,6 +83,20 @@ class JobStore:
                 CREATE INDEX IF NOT EXISTS idx_events_job ON job_events(job_id);
                 """
             )
+            conn.execute("BEGIN IMMEDIATE")
+            columns = {row["name"] for row in conn.execute("PRAGMA table_info(jobs)")}
+            for name, kind in (("lease_owner", "TEXT"), ("lease_expires_at", "REAL"),
+                               ("lease_heartbeat_at", "REAL")):
+                if name not in columns:
+                    conn.execute(f"ALTER TABLE jobs ADD COLUMN {name} {kind}")
+            for row in conn.execute("SELECT id, locked_at FROM jobs "
+                                    "WHERE locked_at IS NOT NULL AND lease_owner IS NULL").fetchall():
+                locked = datetime.fromisoformat(row["locked_at"])
+                if locked.tzinfo is None:
+                    locked = locked.replace(tzinfo=timezone.utc)
+                stamp = locked.timestamp()
+                conn.execute("UPDATE jobs SET lease_owner=?, lease_expires_at=?, lease_heartbeat_at=? WHERE id=?",
+                             (uuid.uuid4().hex, stamp + 1800, stamp, row["id"]))
 
     # --- job lifecycle -------------------------------------------------
 
@@ -115,13 +138,16 @@ class JobStore:
         return [_to_record(r) for r in rows]
 
     def transition(self, job_id: str, to_state: JobState, *, detail: str | None = None,
-                   error: str | None = None, payload_patch: dict[str, Any] | None = None) -> JobRecord:
+                   error: str | None = None, payload_patch: dict[str, Any] | None = None,
+                   expected_state: JobState | None = None) -> JobRecord:
         with self._lock, self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             row = conn.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
             if row is None:
                 raise KeyError(f"job {job_id} not found")
             record = _to_record(row)
+            if expected_state is not None and record.state is not expected_state:
+                raise ConcurrentTransition(f"expected state {expected_state.value}; found {record.state.value}")
             if record.state is to_state and not payload_patch:
                 return record
             if record.state is not to_state:
@@ -151,18 +177,62 @@ class JobStore:
 
     # --- concurrency guards --------------------------------------------
 
-    def try_lock(self, job_id: str) -> bool:
-        """Acquire the render/stage lock. Returns False if already held elsewhere."""
+    def utc_now(self) -> datetime:
+        now = self._clock()
+        if now.tzinfo is None or now.utcoffset() is None:
+            raise ValueError("clock must return a timezone-aware datetime")
+        return now.astimezone(timezone.utc)
+
+    def acquire_lease(self, job_id: str, ttl_s: float = 1800, owner: str | None = None) -> str | None:
+        _validate_ttl(ttl_s)
+        token = uuid.uuid4().hex if owner is None else owner
+        if not isinstance(token, str) or not token.strip():
+            raise ValueError("owner must be a nonempty token")
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            now = self.utc_now()
+            cur = conn.execute(
+                "UPDATE jobs SET lease_owner=?, lease_expires_at=?, lease_heartbeat_at=?, locked_at=? "
+                "WHERE id=? AND (lease_owner IS NULL OR lease_expires_at<=?)",
+                (token, now.timestamp() + ttl_s, now.timestamp(), now.isoformat(), job_id, now.timestamp()),
+            )
+        return token if cur.rowcount == 1 else None
+
+    def renew_lease(self, job_id: str, token: str, ttl_s: float = 1800) -> bool:
+        _validate_ttl(ttl_s)
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            now = self.utc_now().timestamp()
+            cur = conn.execute(
+                "UPDATE jobs SET lease_expires_at=?, lease_heartbeat_at=? "
+                "WHERE id=? AND lease_owner=? AND lease_expires_at>?",
+                (now + ttl_s, now, job_id, token, now),
+            )
+        return cur.rowcount == 1
+
+    def release_lease(self, job_id: str, token: str) -> bool:
         with self._connect() as conn:
             cur = conn.execute(
-                "UPDATE jobs SET locked_at=? WHERE id=? AND (locked_at IS NULL OR locked_at < ?)",
-                (_now(), job_id, _stale_before()),
+                "UPDATE jobs SET lease_owner=NULL, lease_expires_at=NULL, lease_heartbeat_at=NULL, "
+                "locked_at=NULL WHERE id=? AND lease_owner=?",
+                (job_id, token),
             )
-            return cur.rowcount == 1
+        return cur.rowcount == 1
+
+    def try_lock(self, job_id: str) -> bool:
+        """Compatibility wrapper; ownership belongs to this store instance."""
+        with self._lock:
+            token = self.acquire_lease(job_id)
+            if token is None:
+                return False
+            self._legacy_tokens[job_id] = token
+            return True
 
     def unlock(self, job_id: str) -> None:
-        with self._connect() as conn:
-            conn.execute("UPDATE jobs SET locked_at=NULL WHERE id=?", (job_id,))
+        with self._lock:
+            token = self._legacy_tokens.pop(job_id, None)
+            if token is not None:
+                self.release_lease(job_id, token)
 
     def has_active_jobs(self) -> bool:
         with self._connect() as conn:
@@ -189,8 +259,6 @@ class JobStore:
             artifact = ARTIFACT_FOR_STATE.get(state)
             if artifact is None:
                 continue
-            if state is JobState.EDITORIAL_QC and (job_dir / "qc.json").exists():
-                continue
             if not (job_dir / artifact).exists():
                 return state
         return None
@@ -208,9 +276,19 @@ class JobStore:
         validated = validate_artifact(name, data)
         path = self.artifact_dir(job_id) / name
         text = json.dumps(validated, ensure_ascii=False, indent=2, allow_nan=False)
-        tmp = path.with_suffix(path.suffix + ".tmp")
-        tmp.write_text(text, encoding="utf-8")
-        tmp.replace(path)  # atomic on same volume: never a half-written artifact
+        tmp = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            tmp.write_text(text, encoding="utf-8")
+            for attempt in range(4):
+                try:
+                    tmp.replace(path)  # atomic on the same volume
+                    break
+                except PermissionError:
+                    if attempt == 3:
+                        raise
+                    time.sleep(0.01 * 2 ** attempt)
+        finally:
+            tmp.unlink(missing_ok=True)
         return path
 
     def read_artifact(self, job_id: str, name: str) -> Any:
@@ -225,10 +303,9 @@ class JobStore:
         return self.artifacts_root / job_id
 
 
-def _stale_before() -> str:
-    from datetime import timedelta
-
-    return (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat(timespec="seconds")
+def _validate_ttl(ttl_s: float) -> None:
+    if not math.isfinite(ttl_s) or ttl_s <= 0:
+        raise ValueError("lease ttl_s must be finite and positive")
 
 
 def _to_record(row: sqlite3.Row) -> JobRecord:

@@ -7,9 +7,11 @@ from functools import lru_cache
 
 from jsonschema import Draft202012Validator
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
-from .media.contracts import AssetManifest, AudioArtifact, RenderArtifact, TechnicalQCArtifact
+from .media.contracts import (AssetManifest, AudioArtifact, AudioMixArtifact, RenderArtifact,
+                              TechnicalQCArtifact, ThumbnailArtifact)
+from .publishing.contracts import PublishingArtifact
 from .schemas import CreativeReview, ResearchResult, Script, Storyboard, TopicCandidate, TopicSelection, VideoMetadata
 
 
@@ -34,6 +36,10 @@ class ReviewArtifact(BaseModel):
     script: Script
 
 
+class CreativeDraftArtifact(ReviewArtifact):
+    source_script: Script
+
+
 class ReviewSection(BaseModel):
     passed: bool = Field(alias="pass")
     findings: list[str] = Field(default_factory=list)
@@ -45,10 +51,15 @@ class FactualSection(BaseModel):
 
 
 class DraftQualityArtifact(BaseModel):
+    inputs_sha256: str = Field(default="", pattern="^([0-9a-f]{64})?$")
     technical: ReviewSection
     editorial: ReviewSection
     factual: FactualSection
     overall: str = Field(pattern="^(pass|warn|fail)$")
+
+
+class MetadataArtifact(VideoMetadata):
+    script_sha256: str = Field(default="", pattern="^([0-9a-f]{64})?$")
 
 
 class ClaimCheckArtifact(BaseModel):
@@ -66,9 +77,13 @@ class SourceFetchArtifact(BaseModel):
     chars: int = Field(ge=0, default=0)
     sha256: str = ""
     fetched_at: str = ""
+    text: str = Field(default="", max_length=200000)
+    text_sha256: str = Field(default="", pattern="^([0-9a-f]{64})?$")
+    error: str | None = None
 
 
 class VerificationArtifact(BaseModel):
+    script_sha256: str = Field(default="", pattern="^([0-9a-f]{64})?$")
     status: Literal["supported", "needs_review", "unsupported", "fictional"]
     retrieval: Literal["live", "skipped_mock", "not_applicable"]
     checks: list[ClaimCheckArtifact] = Field(default_factory=list)
@@ -78,6 +93,7 @@ class VerificationArtifact(BaseModel):
 
 
 class OriginalityArtifact(BaseModel):
+    script_text_sha256: str = Field(default="", pattern="^([0-9a-f]{64})?$")
     verdict: Literal["original", "too_similar"]
     max_similarity: float = Field(ge=0, le=1)
     nearest_job_id: str | None = None
@@ -88,21 +104,51 @@ class OriginalityArtifact(BaseModel):
     note: str = ""
 
 
+class EditorialCheck(BaseModel):
+    name: str
+    pass_: bool = Field(alias="pass")
+    detail: str = ""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class EditorialQCArtifact(BaseModel):
+    overall: Literal["pass", "warn", "fail"]
+    checks: list[EditorialCheck] = Field(min_length=1)
+    notes: list[str] = Field(default_factory=list)
+    inputs_sha256: str = Field(default="", pattern="^([0-9a-f]{64})?$")
+
+
+class ApprovalArtifact(BaseModel):
+    eligible: bool
+    blockers: list[str] = Field(default_factory=list)
+    checks: list[EditorialCheck] = Field(default_factory=list)
+    requires_operator_approval: Literal[True] = True
+    checked_at: str = ""
+    inputs_sha256: str = Field(default="", pattern="^([0-9a-f]{64})?$")
+
+
 ARTIFACT_MODELS: dict[str, type[BaseModel]] = {
     "job.json": JobSnapshot,
     "research.json": ResearchResult,
     "topic.json": TopicArtifact,
     "script.json": Script,
+    "creative_draft.json": CreativeDraftArtifact,
     "review.json": ReviewArtifact,
     "storyboard.json": Storyboard,
     "draft_qc.json": DraftQualityArtifact,
     "verification.json": VerificationArtifact,
     "originality.json": OriginalityArtifact,
-    "metadata.json": VideoMetadata,
+    "editorial_qc.json": EditorialQCArtifact,
+    "approval.json": ApprovalArtifact,
+    "metadata.json": MetadataArtifact,
     "assets.json": AssetManifest,
     "audio.json": AudioArtifact,
     "render.json": RenderArtifact,
     "qc.json": TechnicalQCArtifact,
+    "thumbnail.json": ThumbnailArtifact,
+    "mix.json": AudioMixArtifact,
+    "publishing.json": PublishingArtifact,
 }
 
 

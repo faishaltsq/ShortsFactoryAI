@@ -112,11 +112,11 @@ class ClaimExtractorAgent(_AgentBase):
     def __init__(self, router: ProviderRouter) -> None:
         super().__init__(router, name="ClaimExtractorAgent")
 
-    def run(self, script: Script) -> list[Claim]:
+    def run(self, script: Script, *, sources: list[dict[str, str]] | None = None) -> list[Claim]:
         result = self._ask(
             task="claim_extraction",
             system=prompts.CLAIM_SYSTEM,
-            user=prompts.claim_user(script.model_dump_json()),
+            user=prompts.claim_user(script.model_dump_json(), sources=sources),
         )
         claims = extract_model(result.content, ScriptClaimList).claims
         return [Claim(statement=c.statement, quote=c.quote, source_url=c.source_url) for c in claims]

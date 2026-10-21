@@ -1,19 +1,17 @@
 import React from 'react';
 import {AbsoluteFill, Audio, Sequence, interpolate, staticFile, useCurrentFrame, useVideoConfig} from 'remotion';
-import type {SceneSpec, StoryboardSpec, TemplateId} from '../types';
+import type {SceneSpec, StoryboardSpec} from '../types';
+import {SCENE_RENDERERS} from './registry';
+import {validateSceneData} from '../scene-data';
 import {resolveTheme} from '../themes/brand';
 import {Subtitles} from '../components/Subtitles';
-import {KineticTypographyScene} from '../compositions/KineticTypography';
-import {EducationalExplainerScene} from '../compositions/EducationalExplainer';
+
 
 const renderScene = (scene: SceneSpec, theme: StoryboardSpec['theme'], watermark?: string): React.ReactNode => {
-  if (scene.template === 'KineticTypography') {
-    return <KineticTypographyScene scene={scene} theme={theme} watermark={watermark} />;
-  }
-  if (scene.template === 'EducationalExplainer') {
-    return <EducationalExplainerScene scene={scene} theme={theme} watermark={watermark} />;
-  }
-  throw new Error(`Template not implemented: ${scene.template}`);
+  validateSceneData(scene);
+  const Component = SCENE_RENDERERS[scene.template];
+  if (!Component) throw new Error(`Template not implemented: ${scene.template}`);
+  return <Component scene={scene} theme={theme} watermark={watermark} />;
 };
 
 /** Applies the scene's transition as an in/out opacity (and optional slide) ramp. */
@@ -64,9 +62,7 @@ export const Short: React.FC<{storyboard: StoryboardSpec}> = ({storyboard}) => {
       {storyboard.narration?.src ? (
         <Audio src={staticFile(storyboard.narration.src)} volume={storyboard.narration.volume ?? 1} />
       ) : null}
-      {storyboard.backgroundMusic?.src ? (
-        <Audio src={staticFile(storyboard.backgroundMusic.src)} volume={storyboard.backgroundMusic.volume ?? 0.15} />
-      ) : null}
+
 
       <Subtitles cues={storyboard.subtitles ?? []} theme={theme} currentFrame={frame} fps={fps} />
       <div style={{position: 'absolute', left: 0, right: 0, top: 0, height: 4, backgroundColor: theme.accent, opacity: 0.9}} />

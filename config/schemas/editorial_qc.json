@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "EditorialCheck": {
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "pass": {
+          "title": "Pass",
+          "type": "boolean"
+        },
+        "detail": {
+          "default": "",
+          "title": "Detail",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "pass"
+      ],
+      "title": "EditorialCheck",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "overall": {
+      "enum": [
+        "pass",
+        "warn",
+        "fail"
+      ],
+      "title": "Overall",
+      "type": "string"
+    },
+    "checks": {
+      "items": {
+        "$ref": "#/$defs/EditorialCheck"
+      },
+      "minItems": 1,
+      "title": "Checks",
+      "type": "array"
+    },
+    "notes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Notes",
+      "type": "array"
+    },
+    "inputs_sha256": {
+      "default": "",
+      "pattern": "^([0-9a-f]{64})?$",
+      "title": "Inputs Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "overall",
+    "checks"
+  ],
+  "title": "EditorialQCArtifact",
+  "type": "object"
+}

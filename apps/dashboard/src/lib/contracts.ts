@@ -17,6 +17,8 @@ export type AgentView = StudioEvent & { stale: boolean };
 export type JobView = {
   id: string; title: string; state: string; source: EventSource;
   created_at: string; updated_at: string; approval_required: boolean;
+  approval: { eligible: boolean | null; blockers: string[] };
+  thumbnail: { available: boolean; url: string | null };
   video: { available: boolean; url: string | null; duration_ms: number | null };
   quality: { technical: boolean | null; editorial: boolean | null; verification: string; checks: Record<string, boolean> };
 };

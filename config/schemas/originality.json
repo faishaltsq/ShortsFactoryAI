@@ -1,6 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "properties": {
+    "script_text_sha256": {
+      "default": "",
+      "pattern": "^([0-9a-f]{64})?$",
+      "title": "Script Text Sha256",
+      "type": "string"
+    },
     "verdict": {
       "enum": [
         "original",

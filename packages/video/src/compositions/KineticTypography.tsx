@@ -1,6 +1,7 @@
 import React from 'react';
 import {interpolate, useCurrentFrame, useVideoConfig} from 'remotion';
 import type {SceneSpec, ThemeSpec} from '../types';
+import {resolveTheme} from '../themes/brand';
 import {AccentBar, Background, SafeArea, Watermark} from '../components/Chrome';
 import {popIn, slideUp} from '../components/presets';
 
@@ -10,9 +11,10 @@ import {popIn, slideUp} from '../components/presets';
  */
 export const KineticTypographyScene: React.FC<{scene: SceneSpec; theme: ThemeSpec; watermark?: string}> = ({
   scene,
-  theme,
+  theme: inputTheme,
   watermark,
 }) => {
+  const theme = resolveTheme(inputTheme);
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
   const durationInFrames = scene.durationInFrames;

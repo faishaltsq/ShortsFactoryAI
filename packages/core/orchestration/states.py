@@ -47,7 +47,7 @@ TRANSITIONS: dict[JobState, set[JobState]] = {
     JobState.EDITORIAL_QC: {JobState.READY_FOR_APPROVAL, JobState.REJECTED, JobState.FAILED, JobState.CANCELLED, JobState.BLOCKED},
     JobState.READY_FOR_APPROVAL: {JobState.APPROVED, JobState.REJECTED, JobState.CANCELLED},
     JobState.APPROVED: {JobState.PRIVATE_UPLOAD, JobState.CANCELLED},
-    JobState.PRIVATE_UPLOAD: {JobState.SCHEDULED, JobState.FAILED, JobState.CANCELLED, JobState.BLOCKED},
+    JobState.PRIVATE_UPLOAD: {JobState.SCHEDULED, JobState.PUBLISHED, JobState.FAILED, JobState.CANCELLED, JobState.BLOCKED},
     JobState.SCHEDULED: {JobState.PUBLISHED, JobState.CANCELLED, JobState.FAILED},
     JobState.PUBLISHED: set(),
     JobState.FAILED: {JobState.IDEA_DISCOVERY},  # retry from earliest incomplete stage
@@ -84,7 +84,8 @@ ARTIFACT_FOR_STATE: dict[JobState, str] = {
     JobState.AUDIO_READY: "audio.json",
     JobState.RENDERING: "render.json",
     JobState.TECHNICAL_QC: "qc.json",
-    JobState.EDITORIAL_QC: "qc.json",
+    JobState.EDITORIAL_QC: "editorial_qc.json",
+    JobState.READY_FOR_APPROVAL: "approval.json",
 }
 
 

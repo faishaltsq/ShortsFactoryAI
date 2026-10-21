@@ -15,6 +15,9 @@ STAGE_AGENTS = {
     "STORYBOARD_READY": "StoryboardAgent", "ASSETS_READY": "AssetAgent",
     "AUDIO_READY": "AudioAgent", "RENDERING": "RenderAgent", "TECHNICAL_QC": "QualityAgent",
     "DRAFT_QC": "QualityAgent", "METADATA": "MetadataAgent",
+    "THUMBNAIL": "RenderAgent",  # Remotion still rendered from the metadata concept
+    "EDITORIAL_QC": "QualityAgent",  # deterministic gate over written artifacts
+    "READY_FOR_APPROVAL": "FactoryOrchestrator",  # hands the job to the operator
 }
 
 

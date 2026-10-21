@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "output_path": {
+      "title": "Output Path",
+      "type": "string"
+    },
+    "sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Sha256",
+      "type": "string"
+    },
+    "width": {
+      "const": 1080,
+      "default": 1080,
+      "title": "Width",
+      "type": "integer"
+    },
+    "height": {
+      "const": 1920,
+      "default": 1920,
+      "title": "Height",
+      "type": "integer"
+    },
+    "format": {
+      "const": "png",
+      "default": "png",
+      "title": "Format",
+      "type": "string"
+    },
+    "storyboard_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Storyboard Sha256",
+      "type": "string"
+    },
+    "metadata_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Metadata Sha256",
+      "type": "string"
+    },
+    "assets_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Assets Sha256",
+      "type": "string"
+    },
+    "scene_id": {
+      "title": "Scene Id",
+      "type": "string"
+    },
+    "frame": {
+      "minimum": 0,
+      "title": "Frame",
+      "type": "integer"
+    },
+    "composition": {
+      "const": "Thumbnail",
+      "default": "Thumbnail",
+      "title": "Composition",
+      "type": "string"
+    }
+  },
+  "required": [
+    "output_path",
+    "sha256",
+    "storyboard_sha256",
+    "metadata_sha256",
+    "assets_sha256",
+    "scene_id",
+    "frame"
+  ],
+  "title": "ThumbnailArtifact",
+  "type": "object"
+}

@@ -10,7 +10,9 @@ from typing import Callable
 
 from ..providers.tts import EdgeTTSProvider
 from ..schemas import Script, Storyboard
-from .contracts import AudioArtifact, AudioSegment
+from .contracts import AssetManifest, AudioArtifact, AudioSegment
+from .assets import load_assets
+from .mix import mix_audio
 from .process import atomic_json, checked_path, json_hash, probe_media, run_checked, sha256_file
 
 
@@ -54,11 +56,40 @@ def timeline_from_audio(storyboard: Storyboard, durations_ms: list[float], bound
     return Storyboard.model_validate(data)
 
 
-def verify_audio(artifact: AudioArtifact, script: Script, storyboard: Storyboard, job_dir: Path) -> None:
+def verify_audio(artifact: AudioArtifact, script: Script, storyboard: Storyboard, job_dir: Path, *, assets: AssetManifest | None = None) -> None:
     if artifact.script_sha256 != json_hash(script.model_dump(mode="json", exclude_none=True)):
         raise ValueError("narration no longer matches the script")
     if artifact.storyboard_sha256 != json_hash(storyboard.model_dump(mode="json", exclude_none=True)):
         raise ValueError("audio timing no longer matches the storyboard")
+    if artifact.assets_sha256 or artifact.mix or storyboard.backgroundMusic or any(s.audio or s.assetRefs for s in storyboard.scenes):
+        assets = load_assets(storyboard, job_dir, assets)
+        if artifact.assets_sha256 != json_hash(assets.model_dump(mode="json")):
+            raise ValueError("audio asset manifest checksum mismatch")
+    if (storyboard.backgroundMusic or any(s.audio for s in storyboard.scenes)) and artifact.mix is None:
+        raise ValueError("licensed audio requested but mixed track receipt is missing")
+    if artifact.mix:
+        mix = artifact.mix
+        original = checked_path(job_dir, mix.input_narration_path)
+        if not original.is_file() or sha256_file(original) != mix.input_narration_sha256:
+            raise ValueError("original narration checksum mismatch")
+        if mix.assets_sha256 != artifact.assets_sha256 or mix.sha256 != artifact.sha256 or mix.output_path != artifact.narration_path:
+            raise ValueError("audio mix receipt mismatch")
+        if mix.source_manifest_sha256 != assets.manifest_sha256:
+            raise ValueError("mix source manifest checksum mismatch")
+        from .scene_data import SceneAudioSpec
+        expected_sfx = [{"asset_id": effect.assetRef, "scene_id": scene.sceneId,
+                         "scene_frame": effect.frame, "absolute_frame": scene.startFrame + effect.frame,
+                         "volume": effect.volume}
+                        for scene in storyboard.scenes if scene.audio
+                        for effect in SceneAudioSpec.model_validate(scene.audio).sfx]
+        if [cue.model_dump() for cue in mix.sfx] != expected_sfx:
+            raise ValueError("mix SFX anchors no longer match narration timeline")
+        if abs(float(probe_media(original)["format"]["duration"]) * 1000 - artifact.duration_ms) > 2:
+            raise ValueError("mix original narration duration mismatch")
+    for segment in artifact.segments:
+        path = checked_path(job_dir, segment.path)
+        if not path.is_file() or sha256_file(path) != segment.sha256:
+            raise ValueError("narration segment checksum mismatch")
     narration = checked_path(job_dir, artifact.narration_path)
     if sha256_file(narration) != artifact.sha256:
         raise ValueError("narration checksum mismatch")
@@ -75,13 +106,14 @@ class AudioAgent:
         self.tts = tts or EdgeTTSProvider(voice=voice, rate=rate)
 
     def run(self, script: Script, storyboard: Storyboard, job_dir: Path,
-            cancelled: Callable[[], bool] | None = None) -> tuple[Storyboard, AudioArtifact]:
+            cancelled: Callable[[], bool] | None = None, *, assets: AssetManifest | None = None) -> tuple[Storyboard, AudioArtifact]:
         if len(script.segments) != len(storyboard.scenes):
             raise ValueError("storyboard must have exactly one scene per script segment")
         if any(scene.segment != segment.text for scene, segment in zip(storyboard.scenes, script.segments)):
             raise ValueError("scene narration must exactly match the approved script")
         if storyboard.fps != 30:
             raise ValueError("audio engine currently supports the verified 30 FPS profile")
+        assets = load_assets(storyboard, job_dir, assets)
         audio_dir = job_dir / "audio"
         audio_dir.mkdir(parents=True, exist_ok=True)
         durations, boundaries, raw_files = [], [], []
@@ -147,5 +179,9 @@ class AudioAgent:
                                  sha256=sha256_file(narration), script_sha256=json_hash(script.model_dump(mode="json", exclude_none=True)),
                                  storyboard_sha256=json_hash(timed.model_dump(mode="json", exclude_none=True)), fps=timed.fps,
                                  total_frames=timed.total_frames, segments=pieces, cues=timed.subtitles)
-        verify_audio(artifact, script, timed, job_dir)
+        artifact.assets_sha256 = json_hash(assets.model_dump(mode="json"))
+        if timed.backgroundMusic or any(scene.audio for scene in timed.scenes):
+            mix = mix_audio(timed, artifact, assets, job_dir, cancelled)
+            artifact = artifact.model_copy(update={"mix": mix, "narration_path": mix.output_path, "sha256": mix.sha256})
+        verify_audio(artifact, script, timed, job_dir, assets=assets)
         return timed, artifact

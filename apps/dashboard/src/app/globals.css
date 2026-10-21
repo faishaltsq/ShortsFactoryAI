@@ -126,6 +126,9 @@ button { font: inherit; color: inherit; }
 .preview__job strong { font-size: 12px; font-weight: 600; color: var(--text);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .preview__meta { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--muted); }
+.meta--thumb { display: flex; align-items: center; gap: 6px; }
+.meta--thumb .thumb { width: 27px; height: 48px; object-fit: cover; border: 1px solid var(--border); border-radius: 3px; background: var(--raised); }
+.meta--blockers { color: var(--amber, #e8bf7b); }
 
 body.economy .figure--work, body.economy .stage__bar i { animation: none !important; transition: none !important; }
 @media (prefers-reduced-motion: reduce) {

@@ -39,7 +39,7 @@ def test_only_http_and_https_are_fetched():
 
 def test_eligible_url_accepts_only_web_schemes():
     assert eligible_url("https://nasa.gov/press")
-    assert eligible_url("http://localhost:8018/x")
+    assert not eligible_url("http://localhost:8018/x"), "untrusted sources may not target local services"
     assert not eligible_url("data:text/html,<script>x</script>")
     assert not eligible_url("https://")
     assert not eligible_url("")

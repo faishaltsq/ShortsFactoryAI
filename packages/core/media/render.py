@@ -4,16 +4,15 @@ from __future__ import annotations
 import json
 import math
 import re
-import shutil
 from fractions import Fraction
 from pathlib import Path
 from typing import Callable
 
 from ..config import PROJECT_ROOT
 from ..schemas import Script, Storyboard
-from .assets import AssetAgent
+from .assets import load_assets, render_storyboard
 from .audio import verify_audio
-from .contracts import AudioArtifact, RenderArtifact, TechnicalQCArtifact
+from .contracts import AssetManifest, AudioArtifact, RenderArtifact, TechnicalQCArtifact
 from .process import atomic_json, checked_path, json_hash, probe_media, run_checked, sha256_file
 from .progress import RemotionProgress, RenderProgress
 
@@ -62,9 +61,9 @@ class RenderAgent:
 
     def run(self, script: Script, storyboard: Storyboard, audio: AudioArtifact, job_dir: Path,
             cancelled: Callable[[], bool] | None = None,
-            progress: Callable[[RenderProgress], None] | None = None) -> RenderArtifact:
-        AssetAgent().run(storyboard)
-        verify_audio(audio, script, storyboard, job_dir)
+            progress: Callable[[RenderProgress], None] | None = None, *, assets: AssetManifest | None = None) -> RenderArtifact:
+        assets = load_assets(storyboard, job_dir, assets)
+        verify_audio(audio, script, storyboard, job_dir, assets=assets)
         if not 30 <= audio.duration_ms / 1000 <= 45:
             raise ValueError("narration outside 30-45s window; revise script before rendering")
         if not re.fullmatch(r"[0-9a-f]{16}", job_dir.name):
@@ -72,15 +71,14 @@ class RenderAgent:
         cli = self.video_dir / "node_modules" / "@remotion" / "cli" / "remotion-cli.js"
         if not cli.is_file():
             raise ValueError("Remotion dependencies are not installed")
-        relative_src = f"jobs/{job_dir.name}/narration-{audio.sha256[:12]}.wav"
-        public_audio = checked_path(self.video_dir / "public", relative_src)
-        public_audio.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(checked_path(job_dir, audio.narration_path), public_audio)
-        props = storyboard.model_dump(mode="json", exclude_none=True)
-        props["narration"] = {"src": relative_src, "durationMs": round(audio.duration_ms), "volume": 1}
+        props = render_storyboard(storyboard, assets)
+        props["narration"] = {"src": audio.narration_path, "durationMs": round(audio.duration_ms), "volume": 1}
+        props.pop("backgroundMusic", None)
+        for scene in props["scenes"]:
+            scene.pop("audio", None)
         props_path = job_dir / "render-props.json"
         atomic_json(props_path, {"storyboard": props})
-        partial = job_dir / "output.partial.mp4"
+        partial = checked_path(job_dir, "output.partial.mp4")
         parser = RemotionProgress(storyboard.total_frames)
 
         def observe(chunk: str) -> None:
@@ -89,13 +87,13 @@ class RenderAgent:
                     progress(update)
 
         run_checked(["node", str(cli), "render", "src/index.ts", "Short", str(partial),
-                     "--props=" + str(props_path), "--codec=h264", "--pixel-format=yuv420p", "--color-space=bt709", "--concurrency=2"],
+                     "--props=" + str(props_path), "--public-dir=" + str(job_dir), "--codec=h264", "--pixel-format=yuv420p", "--color-space=bt709", "--concurrency=2"],
                     cwd=self.video_dir, log_path=job_dir / "render.log", timeout=900, cancelled=cancelled,
                     on_output=observe if progress is not None else None)
         observe("\n")
         probe = probe_media(partial)
         validate_probe(probe, expected_frames=storyboard.total_frames, fps=storyboard.fps, width=storyboard.width, height=storyboard.height)
-        output = job_dir / "output.mp4"
+        output = checked_path(job_dir, "output.mp4")
         partial.replace(output)
         return RenderArtifact(output_path="output.mp4", sha256=sha256_file(output),
                               storyboard_sha256=json_hash(storyboard.model_dump(mode="json", exclude_none=True)),

@@ -172,6 +172,22 @@ class SceneSpec(BaseModel):
     durationInFrames: int = Field(ge=30, le=3000, default=300)
     data: dict[str, Any] | None = None
 
+    @field_validator("data")
+    @classmethod
+    def _template_data(cls, value: dict[str, Any] | None, info: Any) -> dict[str, Any] | None:
+        if value is not None:
+            from .media.scene_data import validate_scene_data
+            validate_scene_data(info.data.get("template", ""), value)
+        return value
+
+    @field_validator("audio")
+    @classmethod
+    def _scene_audio(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
+        if value is not None:
+            from .media.scene_data import SceneAudioSpec
+            SceneAudioSpec.model_validate(value)
+        return value
+
     @field_validator("template")
     @classmethod
     def _known_template(cls, v: str) -> str:

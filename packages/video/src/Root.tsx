@@ -1,66 +1,41 @@
 import React from 'react';
 import {CalculateMetadataFunction, Composition, getInputProps} from 'remotion';
+import {TEMPLATE_IDS} from './types';
 import type {SceneSpec, StoryboardSpec, ThemeSpec} from './types';
 import {resolveTheme} from './themes/brand';
 import {Short} from './compositions/Short';
-import {KineticTypographyScene} from './compositions/KineticTypography';
-import {EducationalExplainerScene} from './compositions/EducationalExplainer';
+import {Thumbnail} from './compositions/Thumbnail';
+import {SCENE_RENDERERS} from './compositions/registry';
 import {SAMPLE_STORYBOARD} from './sample/storyboard';
+import fixture from '../fixtures/all-templates.json';
 
-const totalFramesOf = (sb: StoryboardSpec): number => {
-  const sorted = [...sb.scenes].sort((a, b) => a.startFrame - b.startFrame);
-  const last = sorted[sorted.length - 1];
-  return last ? last.startFrame + last.durationInFrames : sb.fps * 30;
-};
-
+const totalFramesOf = (sb: StoryboardSpec): number => Math.max(...sb.scenes.map(s => s.startFrame + s.durationInFrames));
 const calculateShortMetadata: CalculateMetadataFunction<{storyboard: StoryboardSpec}> = ({props}) => ({
-  durationInFrames: totalFramesOf(props.storyboard),
-  fps: props.storyboard.fps,
-  width: props.storyboard.width,
-  height: props.storyboard.height,
+  durationInFrames: totalFramesOf(props.storyboard), fps: props.storyboard.fps,
+  width: props.storyboard.width, height: props.storyboard.height,
 });
 
-/** Single-template compositions exist for preview and per-template QC. */
-const calculateSceneMetadata: CalculateMetadataFunction<{scene: SceneSpec; theme: ThemeSpec; watermark?: string}> = ({props}) => ({
+export const calculateSceneMetadata: CalculateMetadataFunction<{scene: SceneSpec; theme: ThemeSpec; watermark?: string}> = ({props}) => ({
   durationInFrames: props.scene.durationInFrames,
 });
 
 export const RemotionRoot: React.FC = () => {
   const input = getInputProps() as {storyboard?: StoryboardSpec} | null;
   const storyboard = input?.storyboard ?? SAMPLE_STORYBOARD;
-
-  return (
-    <>
-      <Composition
-        id="Short"
-        component={Short}
-        defaultProps={{storyboard}}
-        calculateMetadata={calculateShortMetadata}
-        durationInFrames={totalFramesOf(storyboard)}
-        fps={storyboard.fps}
-        width={storyboard.width}
-        height={storyboard.height}
-      />
-      <Composition
-        id="KineticTypography"
-        component={KineticTypographyScene}
-        defaultProps={{scene: storyboard.scenes[0], theme: resolveTheme(storyboard.theme), watermark: storyboard.watermark?.text}}
-        calculateMetadata={calculateSceneMetadata}
-        durationInFrames={storyboard.scenes[0]?.durationInFrames ?? 300}
-        fps={storyboard.fps}
-        width={storyboard.width}
-        height={storyboard.height}
-      />
-      <Composition
-        id="EducationalExplainer"
-        component={EducationalExplainerScene}
-        defaultProps={{scene: storyboard.scenes[1], theme: resolveTheme(storyboard.theme), watermark: storyboard.watermark?.text}}
-        calculateMetadata={calculateSceneMetadata}
-        durationInFrames={storyboard.scenes[1]?.durationInFrames ?? 330}
-        fps={storyboard.fps}
-        width={storyboard.width}
-        height={storyboard.height}
-      />
-    </>
-  );
+  const defaults = fixture as unknown as StoryboardSpec;
+  return <>
+    <Composition id="Short" component={Short} defaultProps={{storyboard}} calculateMetadata={calculateShortMetadata}
+      durationInFrames={totalFramesOf(storyboard)} fps={storyboard.fps} width={storyboard.width} height={storyboard.height} />
+    <Composition id="Thumbnail" component={Thumbnail}
+      defaultProps={{scene: storyboard.scenes[0], theme: resolveTheme(storyboard.theme), headline: 'DEMO', watermark: storyboard.watermark?.text}}
+      calculateMetadata={({props}) => ({durationInFrames: props.scene.durationInFrames})} durationInFrames={storyboard.scenes[0].durationInFrames}
+      fps={30} width={1080} height={1920} />
+    {TEMPLATE_IDS.map(id => {
+      const scene = storyboard.scenes.find(s => s.template === id) ?? defaults.scenes.find(s => s.template === id)!;
+      return <Composition key={id} id={id} component={SCENE_RENDERERS[id]}
+        defaultProps={{scene, theme: resolveTheme(storyboard.theme), watermark: storyboard.watermark?.text}}
+        calculateMetadata={calculateSceneMetadata} durationInFrames={scene.durationInFrames}
+        fps={30} width={1080} height={1920} />;
+    })}
+  </>;
 };

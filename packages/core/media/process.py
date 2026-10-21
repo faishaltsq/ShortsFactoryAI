@@ -85,7 +85,7 @@ def run_checked(args: list[str], *, log_path: Path, cwd: Path | None = None,
 def probe_media(path: Path) -> dict:
     if not path.is_file() or path.stat().st_size == 0:
         raise ValueError("media artifact is missing or empty")
-    result = subprocess.run(["ffprobe", "-v", "error", "-show_format", "-show_streams", "-of", "json", str(path)],
+    result = subprocess.run(["ffprobe", "-v", "error", "-protocol_whitelist", "file,pipe", "-show_format", "-show_streams", "-of", "json", str(path)],
                             capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
     if result.returncode:
         raise ValueError("ffprobe could not decode media artifact")

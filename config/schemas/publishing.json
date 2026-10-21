@@ -1,0 +1,197 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "UploadOptions": {
+      "additionalProperties": false,
+      "properties": {
+        "category_id": {
+          "pattern": "^[1-9][0-9]{0,3}$",
+          "title": "Category Id",
+          "type": "string"
+        },
+        "made_for_kids": {
+          "title": "Made For Kids",
+          "type": "boolean"
+        },
+        "contains_synthetic_media": {
+          "title": "Contains Synthetic Media",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "category_id",
+        "made_for_kids",
+        "contains_synthetic_media"
+      ],
+      "title": "UploadOptions",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "phase": {
+      "enum": [
+        "initiating",
+        "uploading",
+        "verifying",
+        "private",
+        "uncertain",
+        "scheduling",
+        "scheduled",
+        "publishing",
+        "published"
+      ],
+      "title": "Phase",
+      "type": "string"
+    },
+    "media_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Media Sha256",
+      "type": "string"
+    },
+    "approved_inputs_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Approved Inputs Sha256",
+      "type": "string"
+    },
+    "total_bytes": {
+      "exclusiveMinimum": 0,
+      "title": "Total Bytes",
+      "type": "integer"
+    },
+    "offset": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Offset",
+      "type": "integer"
+    },
+    "options": {
+      "$ref": "#/$defs/UploadOptions"
+    },
+    "video_id": {
+      "anyOf": [
+        {
+          "pattern": "^[A-Za-z0-9_-]{11}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Video Id"
+    },
+    "privacy_status": {
+      "anyOf": [
+        {
+          "enum": [
+            "private",
+            "public",
+            "unlisted"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Privacy Status"
+    },
+    "publish_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Publish At"
+    },
+    "requested_publish_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Requested Publish At"
+    },
+    "authorized_by": {
+      "anyOf": [
+        {
+          "maxLength": 100,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Authorized By"
+    },
+    "authorized_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Authorized At"
+    },
+    "checked_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Checked At"
+    },
+    "retry_count": {
+      "default": 0,
+      "maximum": 5,
+      "minimum": 0,
+      "title": "Retry Count",
+      "type": "integer"
+    },
+    "error_code": {
+      "anyOf": [
+        {
+          "pattern": "^[a-z_]{1,64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Error Code"
+    }
+  },
+  "required": [
+    "phase",
+    "media_sha256",
+    "approved_inputs_sha256",
+    "total_bytes",
+    "options"
+  ],
+  "title": "PublishingArtifact",
+  "type": "object"
+}

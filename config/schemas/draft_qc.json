@@ -43,6 +43,12 @@
     }
   },
   "properties": {
+    "inputs_sha256": {
+      "default": "",
+      "pattern": "^([0-9a-f]{64})?$",
+      "title": "Inputs Sha256",
+      "type": "string"
+    },
     "technical": {
       "$ref": "#/$defs/ReviewSection"
     },

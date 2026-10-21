@@ -123,6 +123,16 @@ def create_app(store: JobStore | None = None) -> FastAPI:
                 return Response(content=body, status_code=206, media_type="video/mp4", headers=headers)
         return Response(content=path.read_bytes(), status_code=200, media_type="video/mp4", headers=headers)
 
+    @app.get("/api/jobs/{job_id}/thumbnail")
+    def thumbnail(job_id: str) -> Response:
+        try:
+            path = service.thumbnail_path(job_id)
+        except (ValueError, KeyError) as exc:
+            raise HTTPException(404, "validated thumbnail is unavailable") from exc
+        return Response(content=path.read_bytes(), status_code=200, media_type="image/png",
+                        headers={"Cache-Control": "no-store",
+                                 "Content-Disposition": 'inline; filename="thumbnail.png"'})
+
     @app.post("/api/integrations/hermes/events")
     async def hermes_events(request: Request) -> JSONResponse:
         secret = _hermes_secret()

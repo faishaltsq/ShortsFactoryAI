@@ -195,6 +195,17 @@ export function Preview({ src, mode, view, job, approval, onToggleDemo }: {
                 : 'Belum ada MP4 terverifikasi'}
               {job.approval_required ? ' · perlu approval operator' : ''}
             </span>
+            {job.thumbnail?.available && job.thumbnail.url ? (
+              <span className="meta meta--thumb">
+                <img className="thumb" src={job.thumbnail.url} alt={`Thumbnail ${job.id.slice(0, 8)}`} loading="lazy" />
+                Thumbnail 1080×1920 terverifikasi
+              </span>
+            ) : null}
+            {job.approval?.blockers?.length ? (
+              <span className="meta meta--blockers" data-testid="approval-blockers">
+                Blocker: {job.approval.blockers.slice(0, 3).join(' · ')}
+              </span>
+            ) : null}
           </>
         ) : (
           <span className="meta">Tidak ada job dipilih pada mode ini.</span>

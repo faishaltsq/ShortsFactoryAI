@@ -65,6 +65,30 @@
           "default": "",
           "title": "Fetched At",
           "type": "string"
+        },
+        "text": {
+          "default": "",
+          "maxLength": 200000,
+          "title": "Text",
+          "type": "string"
+        },
+        "text_sha256": {
+          "default": "",
+          "pattern": "^([0-9a-f]{64})?$",
+          "title": "Text Sha256",
+          "type": "string"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error"
         }
       },
       "required": [
@@ -76,6 +100,12 @@
     }
   },
   "properties": {
+    "script_sha256": {
+      "default": "",
+      "pattern": "^([0-9a-f]{64})?$",
+      "title": "Script Sha256",
+      "type": "string"
+    },
     "status": {
       "enum": [
         "supported",

@@ -56,6 +56,34 @@ def test_video_is_confined_hash_checked_and_supports_ranges(tmp_path):
     assert client.get(f"/api/jobs/{job.id}/video").status_code == 404
 
 
+def test_thumbnail_is_hash_checked_and_png_only(tmp_path):
+    store = JobStore(tmp_path / "factory.db", tmp_path / "jobs")
+    job = store.create(title="Thumbnail serving fixture, not a real render")
+    png = b"\x89PNG\r\n\x1a\n" + bytes(16) + b"IHDR" + bytes(40)
+    root = store.artifact_dir(job.id)
+    (root / "thumbnail.png").write_bytes(png)
+    store.write_artifact(job.id, "thumbnail.json", {
+        "output_path": "thumbnail.png", "sha256": hashlib.sha256(png).hexdigest(),
+        "storyboard_sha256": "a" * 64, "metadata_sha256": "b" * 64, "assets_sha256": "c" * 64,
+        "scene_id": "scene-1", "frame": 0})
+    client = client_for(store)
+    response = client.get(f"/api/jobs/{job.id}/thumbnail")
+    assert response.status_code == 200 and response.content == png
+    assert response.headers["content-type"] == "image/png"
+    assert response.headers["cache-control"] == "no-store"
+    view = client.get("/api/studio/snapshot").json()["jobs"][0]
+    assert view["thumbnail"] == {"available": True, "url": f"/api/jobs/{job.id}/thumbnail"}
+    assert view["approval"] == {"eligible": None, "blockers": []}
+    (root / "thumbnail.png").write_bytes(b"not a png")
+    assert client.get(f"/api/jobs/{job.id}/thumbnail").status_code == 404
+    (root / "thumbnail.png").write_bytes(png)
+    store.write_artifact(job.id, "thumbnail.json", {
+        "output_path": "../outside.png", "sha256": hashlib.sha256(png).hexdigest(),
+        "storyboard_sha256": "a" * 64, "metadata_sha256": "b" * 64, "assets_sha256": "c" * 64,
+        "scene_id": "scene-1", "frame": 0})
+    assert client.get(f"/api/jobs/{job.id}/thumbnail").status_code == 404
+
+
 @pytest.mark.asyncio
 async def test_sse_replays_after_cursor_and_restores_snapshot(tmp_path):
     from apps.api.streaming import stream_events
