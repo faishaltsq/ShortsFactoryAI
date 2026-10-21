@@ -7,12 +7,14 @@ system may reach a provider outside this module.
 
 from __future__ import annotations
 
+import copy
 import datetime as dt
 import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..config import Settings, get_settings
+from ..studio import StudioConfigError, load_studio
 from .base import BudgetExceededError, Provider, ProviderError, ProviderResult
 from .claude_cli import ClaudeCliProvider
 from .mock import MockProvider
@@ -173,6 +175,13 @@ class ProviderRouter:
         if allow_mock is None:
             allow_mock = self.allow_mock_default
         self._check_budget()
+        try:
+            studio = load_studio()
+        except StudioConfigError as exc:
+            raise ProviderError(f"studio config invalid: {exc}", provider="router") from exc
+        override = studio.agents.get(agent)
+        if override is not None and override.prompt:
+            system = override.prompt
         errors: list[str] = []
         chain = self._chain(tier)
         for provider in chain:
@@ -186,8 +195,17 @@ class ProviderRouter:
             if provider.name in self._health_cache and not self._health_cache[provider.name]:
                 errors.append(f"{provider.name}: unhealthy")
                 continue
+            target = provider
+            if override is not None and provider.name != "mock":
+                if override.model:
+                    target = copy.copy(target)
+                    target.model = override.model
+                    errors.append(f"studio override model={override.model} for {agent}")
+                if override.temperature is not None and hasattr(target, "temperature"):
+                    target = copy.copy(target)
+                    target.temperature = override.temperature
             try:
-                result = provider.complete(task=task, system=system, user=user)
+                result = target.complete(task=task, system=system, user=user)
             except ProviderError as exc:
                 errors.append(f"{provider.name}: {exc}")
                 self._mark_failure(provider.name)
