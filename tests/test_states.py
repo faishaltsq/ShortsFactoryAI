@@ -1,5 +1,6 @@
 from packages.core.orchestration.states import (
     PIPELINE_ORDER,
+    STOP_POINTS,
     TRANSITIONS,
     IllegalTransition,
     JobState,
@@ -30,3 +31,9 @@ def test_terminal_states():
 def test_failure_can_restart():
     assert JobState.IDEA_DISCOVERY in TRANSITIONS[JobState.FAILED]
     assert JobState.BLOCKED in TRANSITIONS[JobState.IDEA_DISCOVERY]
+
+
+def test_stop_points_cover_pipeline():
+    assert STOP_POINTS["storyboard"] is JobState.STORYBOARD_READY
+    assert STOP_POINTS["render"] is JobState.TECHNICAL_QC
+    assert set(STOP_POINTS) == {"research", "script", "creative", "storyboard", "audio", "render"}

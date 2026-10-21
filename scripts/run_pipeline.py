@@ -16,17 +16,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from packages.core.config import JOBS_DIR, get_settings  # noqa: E402
-from packages.core.orchestration import JobState, JobStore  # noqa: E402
+from packages.core.orchestration import JobStore  # noqa: E402
+from packages.core.orchestration.states import STOP_POINTS as STOPS  # noqa: E402
 from packages.core.pipeline import PipelineRunner  # noqa: E402
-
-STOPS = {
-    "research": JobState.TOPIC_SELECTED,
-    "script": JobState.SCRIPT_GENERATED,
-    "creative": JobState.CREATIVE_REVIEW,
-    "storyboard": JobState.STORYBOARD_READY,
-    "audio": JobState.AUDIO_READY,
-    "render": JobState.TECHNICAL_QC,
-}
 
 
 def main() -> int:

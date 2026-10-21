@@ -100,3 +100,14 @@ def assert_transition(src: JobState, dst: JobState) -> None:
     if not can_transition(src, dst):
         allowed = sorted(s.value for s in TRANSITIONS.get(src, set()))
         raise IllegalTransition(f"{src.value} -> {dst.value} not allowed; allowed: {allowed}")
+
+
+#: Titik henti pipeline untuk CLI dan API — satu sumber kebenaran.
+STOP_POINTS: dict[str, JobState] = {
+    "research": JobState.TOPIC_SELECTED,
+    "script": JobState.SCRIPT_GENERATED,
+    "creative": JobState.CREATIVE_REVIEW,
+    "storyboard": JobState.STORYBOARD_READY,
+    "audio": JobState.AUDIO_READY,
+    "render": JobState.TECHNICAL_QC,
+}
