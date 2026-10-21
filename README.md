@@ -72,6 +72,6 @@ The default tests isolate databases/artifacts and mock network/model boundaries.
 
 ## Boundaries and next milestones
 
-FastAPI routes, the Next.js dashboard, seven-day planning, startup services, recurring scheduling, source retrieval/claim verification, licensed BGM/SFX, thumbnail production, and YouTube OAuth/upload controls are not implemented yet. No scheduler, startup task, cron job, account connection, upload or public publishing was enabled.
+FastAPI routes (`apps/api`) and the Next.js dashboard (`apps/dashboard`), together known as **Pixel Studio**, are implemented locally — see [pixel studio guide](docs/PIXEL_STUDIO.md) for the operator console: model/prompt/budget/production configuration, job queue with run-cancel, config history with rollback, provider health, and daily usage. Seven-day planning, startup services, recurring scheduling, source retrieval/claim verification, licensed BGM/SFX, thumbnail production, and YouTube OAuth/upload controls are not implemented yet. No scheduler, startup task, cron job, account connection, upload or public publishing was enabled.
 
 See [implementation status](docs/IMPLEMENTATION_STATUS.md), [render runbook](docs/RENDER_RUNBOOK.md), and [AGENTS.md](AGENTS.md).
