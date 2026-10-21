@@ -81,3 +81,146 @@ export function validateSceneData(scene: SceneSpec): void {
   }
   for (const ref of scene.assetRefs) localImage(ref);
 }
+
+export const SETTINGS = ['space', 'desert', 'city', 'ocean', 'forest', 'interior', 'abstract'] as const;
+export const TIMES_OF_DAY = ['dawn', 'day', 'dusk', 'night'] as const;
+export const POSES = ['stand', 'point', 'reach', 'walk', 'lookUp', 'shrug', 'sit'] as const;
+export const PROP_KINDS = ['sun', 'moon', 'planet', 'star', 'cloud', 'mountain', 'tree', 'tower', 'gear', 'book', 'wave', 'clock', 'bulb', 'arrow'] as const;
+export const EFFECTS = ['lightRays', 'dust', 'stars', 'speedLines', 'impact', 'vignette'] as const;
+export const FRAMINGS = ['wide', 'medium', 'close'] as const;
+export const CAMERA_MOVES = ['static', 'pushIn', 'pullOut', 'panLeft', 'panRight', 'tiltUp', 'handheld'] as const;
+
+export type Setting = (typeof SETTINGS)[number];
+export type TimeOfDay = (typeof TIMES_OF_DAY)[number];
+export type Pose = (typeof POSES)[number];
+export type PropKind = (typeof PROP_KINDS)[number];
+export type Effect = (typeof EFFECTS)[number];
+export type Framing = (typeof FRAMINGS)[number];
+export type CameraMove = (typeof CAMERA_MOVES)[number];
+
+export interface IllustrationActor {
+  pose: Pose;
+  x: number;
+  ground: number;
+  scale: number;
+  facing: 'left' | 'right';
+  tone: 'primary' | 'secondary' | 'accent';
+  silhouette: boolean;
+}
+
+export interface IllustrationProp {kind: PropKind; x: number; y: number; scale: number}
+export interface IllustrationShot {framing: Framing; camera: CameraMove; weight: number}
+
+export interface IllustrationData {
+  title?: string;
+  caption?: string;
+  setting: Setting;
+  timeOfDay?: TimeOfDay;
+  imageRef?: string;
+  actors: IllustrationActor[];
+  props: IllustrationProp[];
+  fx: Effect[];
+  shots: IllustrationShot[];
+}
+
+const ILLUSTRATION_KEYS = ['title', 'caption', 'setting', 'timeOfDay', 'imageRef', 'actors', 'props', 'fx', 'shots'];
+
+const oneOf = <T extends string>(allowed: readonly T[], value: unknown, field: string, fallback: T): T => {
+  if (value == null) return fallback;
+  if (typeof value !== 'string' || !(allowed as readonly string[]).includes(value)) {
+    throw new Error(`Unsupported illustration ${field}: ${String(value)}`);
+  }
+  return value as T;
+};
+
+const unit = (value: unknown, field: string, fallback: number, min = 0, max = 1): number => {
+  if (value == null) return fallback;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) {
+    throw new Error(`Illustration ${field} must be a finite number in ${min}..${max}`);
+  }
+  return value;
+};
+
+const record = (value: unknown, keys: string[], label: string): Record<string, unknown> => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`Illustration ${label} must be an object`);
+  const data = value as Record<string, unknown>;
+  if (Object.keys(data).some((key) => !keys.includes(key))) throw new Error(`Unsupported illustration ${label} field`);
+  return data;
+};
+
+const optionalText = (value: unknown, max: number, field: string): string | undefined => {
+  if (value == null) return undefined;
+  if (typeof value !== 'string' || !value.trim() || value.length > max) throw new Error(`Invalid illustration ${field}`);
+  return value;
+};
+
+export function validateIllustrationData(raw: unknown): IllustrationData {
+  const data = record(raw, ILLUSTRATION_KEYS, 'data');
+  const out: IllustrationData = {
+    setting: oneOf(SETTINGS, data.setting, 'setting', 'abstract'),
+    actors: [],
+    props: [],
+    fx: [],
+    shots: [{framing: 'wide', camera: 'pushIn', weight: 1}],
+  };
+  const title = optionalText(data.title, 70, 'title');
+  if (title) out.title = title;
+  const caption = optionalText(data.caption, 90, 'caption');
+  if (caption) out.caption = caption;
+  if (data.timeOfDay != null) out.timeOfDay = oneOf(TIMES_OF_DAY, data.timeOfDay, 'timeOfDay', 'night');
+  if (data.imageRef != null) out.imageRef = localImage(String(data.imageRef));
+
+  if (data.actors != null) {
+    if (!Array.isArray(data.actors) || data.actors.length > 3) throw new Error('Illustration actors must be an array of at most 3');
+    out.actors = data.actors.map((item, i) => {
+      const a = record(item, ['pose', 'x', 'ground', 'scale', 'facing', 'tone', 'silhouette'], `actor ${i}`);
+      return {
+        pose: oneOf(POSES, a.pose, 'pose', 'stand'),
+        x: unit(a.x, `actor ${i} x`, 0.5),
+        ground: unit(a.ground, `actor ${i} ground`, 0.72),
+        scale: unit(a.scale, `actor ${i} scale`, 1, 0.4, 1.8),
+        facing: a.facing === 'left' ? 'left' : 'right',
+        tone: oneOf(['primary', 'secondary', 'accent'] as const, a.tone, 'tone', 'primary'),
+        silhouette: Boolean(a.silhouette),
+      };
+    });
+  }
+
+  if (data.props != null) {
+    if (!Array.isArray(data.props) || data.props.length > 5) throw new Error('Illustration props must be an array of at most 5');
+    out.props = data.props.map((item, i) => {
+      const p = record(item, ['kind', 'x', 'y', 'scale'], `prop ${i}`);
+      return {
+        kind: oneOf(PROP_KINDS, p.kind, 'prop kind', 'star'),
+        x: unit(p.x, `prop ${i} x`, 0.5),
+        y: unit(p.y, `prop ${i} y`, 0.35),
+        scale: unit(p.scale, `prop ${i} scale`, 1, 0.4, 2),
+      };
+    });
+  }
+
+  if (data.fx != null) {
+    if (!Array.isArray(data.fx) || data.fx.length > 4) throw new Error('Illustration fx must be an array of at most 4');
+    const seen: Effect[] = [];
+    for (const item of data.fx) {
+      const effect = oneOf(EFFECTS, item, 'fx', 'dust');
+      if (!seen.includes(effect)) seen.push(effect);
+    }
+    out.fx = seen;
+  }
+
+  if (data.shots != null) {
+    if (!Array.isArray(data.shots) || data.shots.length < 1 || data.shots.length > 4) {
+      throw new Error('Illustration shots must be an array of 1..4');
+    }
+    out.shots = data.shots.map((item, i) => {
+      const s = record(item, ['framing', 'camera', 'weight'], `shot ${i}`);
+      return {
+        framing: oneOf(FRAMINGS, s.framing, 'framing', 'wide'),
+        camera: oneOf(CAMERA_MOVES, s.camera, 'camera', 'pushIn'),
+        weight: unit(s.weight, `shot ${i} weight`, 1, 0.5, 3),
+      };
+    });
+  }
+  return out;
+}
