@@ -20,12 +20,18 @@
       "additionalProperties": true,
       "title": "Thumbnail",
       "type": "object"
+    },
+    "script_sha256": {
+      "default": "",
+      "pattern": "^([0-9a-f]{64})?$",
+      "title": "Script Sha256",
+      "type": "string"
     }
   },
   "required": [
     "title",
     "description"
   ],
-  "title": "VideoMetadata",
+  "title": "MetadataArtifact",
   "type": "object"
 }

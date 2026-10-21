@@ -84,6 +84,14 @@ class ClaudeCliConfig:
 
 
 @dataclass(frozen=True)
+class CodexCliConfig:
+    binary: str = field(default_factory=lambda: os.environ.get("CODEX_CLI_BIN", "codex"))
+    model: str = field(default_factory=lambda: os.environ.get("CODEX_CLI_MODEL", "gpt-6.1-sol"))
+    timeout_s: int = field(default_factory=lambda: _int("CODEX_CLI_TIMEOUT_S", 300))
+    enabled: bool = field(default_factory=lambda: os.environ.get("CODEX_CLI_ENABLED", "1").strip().lower() not in {"0", "false", "no"})
+
+
+@dataclass(frozen=True)
 class ProductionConfig:
     language: str = field(default_factory=lambda: os.environ.get("VIDEO_LANGUAGE", "id-ID"))
     width: int = field(default_factory=lambda: _int("VIDEO_WIDTH", 1080))
@@ -101,6 +109,7 @@ class Settings:
     budget: BudgetConfig = field(default_factory=BudgetConfig)
     deepseek: DeepSeekConfig = field(default_factory=DeepSeekConfig)
     claude_cli: ClaudeCliConfig = field(default_factory=ClaudeCliConfig)
+    codex_cli: CodexCliConfig = field(default_factory=CodexCliConfig)
     production: ProductionConfig = field(default_factory=ProductionConfig)
     db_path: Path = field(default_factory=lambda: JOBS_DIR / "factory.db")
 

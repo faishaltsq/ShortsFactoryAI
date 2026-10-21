@@ -11,6 +11,7 @@ export const TEMPLATE_IDS = [
   'HistoricalTimeline',
   'ParallaxStory',
   'InfographicMotion',
+  'IllustratedStory',
 ] as const;
 
 export type TemplateId = (typeof TEMPLATE_IDS)[number];

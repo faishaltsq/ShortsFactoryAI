@@ -14,6 +14,7 @@ TemplateId = Literal[
     "HistoricalTimeline",
     "ParallaxStory",
     "InfographicMotion",
+    "IllustratedStory",
 ]
 
 ALLOWED_TEMPLATES = {
@@ -23,6 +24,7 @@ ALLOWED_TEMPLATES = {
     "HistoricalTimeline",
     "ParallaxStory",
     "InfographicMotion",
+    "IllustratedStory",
 }
 
 
@@ -111,6 +113,18 @@ class Script(BaseModel):
         return " ".join(s.text for s in self.segments)
 
 
+class ScriptClaim(BaseModel):
+    """One factual assertion a model says the script makes, with its quoted evidence."""
+
+    statement: str = Field(min_length=1)
+    quote: str = Field(default="")
+    source_url: str = Field(default="")
+
+
+class ScriptClaimList(BaseModel):
+    claims: list[ScriptClaim] = Field(default_factory=list)
+
+
 class CreativeReview(BaseModel):
     verdict: Literal["approve", "revise", "reject"] = "approve"
     weak_spots: list[str] = Field(default_factory=list)
@@ -159,6 +173,22 @@ class SceneSpec(BaseModel):
     startFrame: int = 0
     durationInFrames: int = Field(ge=30, le=3000, default=300)
     data: dict[str, Any] | None = None
+
+    @field_validator("data")
+    @classmethod
+    def _template_data(cls, value: dict[str, Any] | None, info: Any) -> dict[str, Any] | None:
+        if value is not None:
+            from .media.scene_data import validate_scene_data
+            validate_scene_data(info.data.get("template", ""), value)
+        return value
+
+    @field_validator("audio")
+    @classmethod
+    def _scene_audio(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
+        if value is not None:
+            from .media.scene_data import SceneAudioSpec
+            SceneAudioSpec.model_validate(value)
+        return value
 
     @field_validator("template")
     @classmethod

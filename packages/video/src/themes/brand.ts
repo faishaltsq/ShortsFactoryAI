@@ -33,6 +33,9 @@ export const THEMES: Record<string, ThemeSpec> = {
   },
 };
 
+export const TYPE = {heading: 64, body: 40, detail: 30, kicker: 30, number: 68} as const;
+export const SPACE = {small: 12, card: 24, section: 36, radius: 20} as const;
+
 export const DEFAULT_THEME = THEMES.midnight;
 
 export const resolveTheme = (theme?: Partial<ThemeSpec>): ThemeSpec => ({

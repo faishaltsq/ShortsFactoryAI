@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "ClaimCheckArtifact": {
+      "properties": {
+        "statement": {
+          "title": "Statement",
+          "type": "string"
+        },
+        "status": {
+          "pattern": "^(supported|unsupported|unverified)$",
+          "title": "Status",
+          "type": "string"
+        },
+        "source_url": {
+          "default": "",
+          "title": "Source Url",
+          "type": "string"
+        },
+        "quote": {
+          "default": "",
+          "title": "Quote",
+          "type": "string"
+        },
+        "matched": {
+          "default": "",
+          "title": "Matched",
+          "type": "string"
+        },
+        "reason": {
+          "default": "",
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "statement",
+        "status"
+      ],
+      "title": "ClaimCheckArtifact",
+      "type": "object"
+    },
+    "SourceFetchArtifact": {
+      "properties": {
+        "url": {
+          "title": "Url",
+          "type": "string"
+        },
+        "status": {
+          "title": "Status",
+          "type": "string"
+        },
+        "chars": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Chars",
+          "type": "integer"
+        },
+        "sha256": {
+          "default": "",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "fetched_at": {
+          "default": "",
+          "title": "Fetched At",
+          "type": "string"
+        },
+        "text": {
+          "default": "",
+          "maxLength": 200000,
+          "title": "Text",
+          "type": "string"
+        },
+        "text_sha256": {
+          "default": "",
+          "pattern": "^([0-9a-f]{64})?$",
+          "title": "Text Sha256",
+          "type": "string"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error"
+        }
+      },
+      "required": [
+        "url",
+        "status"
+      ],
+      "title": "SourceFetchArtifact",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "script_sha256": {
+      "default": "",
+      "pattern": "^([0-9a-f]{64})?$",
+      "title": "Script Sha256",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "supported",
+        "needs_review",
+        "unsupported",
+        "fictional"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "retrieval": {
+      "enum": [
+        "live",
+        "skipped_mock",
+        "not_applicable"
+      ],
+      "title": "Retrieval",
+      "type": "string"
+    },
+    "checks": {
+      "items": {
+        "$ref": "#/$defs/ClaimCheckArtifact"
+      },
+      "title": "Checks",
+      "type": "array"
+    },
+    "sources": {
+      "items": {
+        "$ref": "#/$defs/SourceFetchArtifact"
+      },
+      "title": "Sources",
+      "type": "array"
+    },
+    "retrieved": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Retrieved",
+      "type": "integer"
+    },
+    "note": {
+      "default": "",
+      "title": "Note",
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "retrieval"
+  ],
+  "title": "VerificationArtifact",
+  "type": "object"
+}

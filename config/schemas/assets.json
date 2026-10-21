@@ -1,9 +1,100 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "ResolvedAsset": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "path": {
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "image",
+            "music",
+            "sfx"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "license": {
+          "minLength": 1,
+          "title": "License",
+          "type": "string"
+        },
+        "attribution": {
+          "minLength": 1,
+          "title": "Attribution",
+          "type": "string"
+        },
+        "source": {
+          "minLength": 1,
+          "title": "Source",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "license_file": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "License File"
+        },
+        "license_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "License Sha256"
+        },
+        "staged_path": {
+          "title": "Staged Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "path",
+        "kind",
+        "license",
+        "attribution",
+        "source",
+        "sha256",
+        "staged_path"
+      ],
+      "title": "ResolvedAsset",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "mode": {
-      "const": "project-generated-vectors",
       "default": "project-generated-vectors",
+      "enum": [
+        "project-generated-vectors",
+        "licensed-local"
+      ],
       "title": "Mode",
       "type": "string"
     },
@@ -17,16 +108,69 @@
     },
     "assets": {
       "items": {
-        "type": "string"
+        "$ref": "#/$defs/ResolvedAsset"
       },
       "title": "Assets",
       "type": "array"
     },
     "license": {
-      "const": "project-original",
       "default": "project-original",
+      "enum": [
+        "project-original",
+        "per-asset"
+      ],
       "title": "License",
       "type": "string"
+    },
+    "library_root": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Library Root"
+    },
+    "manifest_path": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Manifest Path"
+    },
+    "manifest_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Manifest Sha256"
+    },
+    "dependencies_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Dependencies Sha256"
     }
   },
   "required": [

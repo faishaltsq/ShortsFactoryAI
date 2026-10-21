@@ -33,6 +33,8 @@ def main() -> int:
     print(f"deepseek model:      {settings.deepseek.model or '(unset)'}")
     print(f"claude cli bin:      {settings.claude_cli.binary}")
     print(f"claude cli model:    {settings.claude_cli.model}")
+    print(f"codex cli bin:       {settings.codex_cli.binary}")
+    print(f"codex cli model:     {settings.codex_cli.model}")
 
     if not args.live:
         print("dry run (no completions). use --live to send one prompt per provider.")

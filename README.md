@@ -1,16 +1,17 @@
 # Shorts Factory AI
 
-Local-first Indonesian YouTube Shorts production engine. Python owns orchestration and persistence; fixed React/Remotion templates own rendering. This is a working CLI/video milestone, **not yet the complete dashboard or unattended publishing application**.
+Local-first Indonesian YouTube Shorts production engine. Python owns orchestration and persistence; fixed React/Remotion templates own rendering. The local production pipeline reaches operator approval; unattended execution and live YouTube publishing are not enabled.
 
 ## Working now
 
-- SQLite jobs/events, exclusive pipeline locks, atomic validated JSON artifacts and job snapshots.
+- SQLite jobs/events, persisted plans, token-owned leases, atomic validated artifacts and job snapshots. The scheduler defaults to disabled.
 - Explicit worker/strategist provider adapters, deterministic mock mode, and strict live mode without fixture fallback.
-- Research suggestions, selection, script, creative review, storyboard and draft metadata through the logical agents.
-- `KineticTypography` and `EducationalExplainer` vector templates. Other declared template categories are rejected by the asset/render stages until implemented.
-- Real Indonesian Edge TTS, word-boundary subtitles, measured per-scene durations, two-pass loudness normalization.
-- H.264/AAC MP4 export with BT.709, 1080×1920, 30 FPS, and technical QC.
-- Checksum-verified resume: completed media are reused without another synthesis or render.
+- Research, script, source retrieval with quote checks, originality screening, creative review, storyboard, and editorial eligibility.
+- Six fixed templates: `KineticTypography`, `EducationalExplainer`, `MotionComic`, `HistoricalTimeline`, `ParallaxStory`, and `InfographicMotion`.
+- Local licensed-asset manifests, optional music/SFX mixing, Indonesian Edge TTS, word-boundary subtitles, and narration-measured scene timing.
+- H.264/AAC MP4, 1080×1920 PNG thumbnails, technical QC, and checksum-verified warm resume.
+- FastAPI read-only studio with Next.js dashboard; explicit local CLI approval and private-first YouTube publishing commands. No account is connected by default.
+- `IllustratedStory` template: procedural vector illustration (environments, posed characters, props, atmosphere, virtual camera, shot cuts) driven by validated JSON — no image-generation service and no operator-supplied media required.
 
 ## Requirements and installation
 
@@ -20,31 +21,43 @@ Verified on Windows 11, Python 3.12.10, Node 26.7.0 and FFmpeg/FFprobe 9.0.1. Py
 uv sync --frozen
 cd packages/video
 npm ci --include=dev --no-audit --no-fund
+cd ../../apps/dashboard
+npm ci --include=dev --no-audit --no-fund
 cd ../..
 ```
 
 FFmpeg, FFprobe, Node and uv must be on PATH. The existing shell may export `NODE_ENV=production`; `--include=dev` is deliberate.
 
-## Produce a demo
+## Windows launchers
+
+Two double-clickable wrappers sit at the repository root. Both check prerequisites before doing anything and print the missing step instead of failing deep inside a stage.
+
+| File | Action |
+| --- | --- |
+| `run-demo.bat` | Runs the mock-content demo to `READY_FOR_APPROVAL` and keeps the window open with the exit code |
+| `run-demo.bat --resume JOB_ID` | Reuses a completed job's media instead of creating a new one |
+| `run-demo.bat --check` | Verifies uv, Node, FFmpeg, FFprobe, the venv and video dependencies, then exits |
+| `start-studio.bat` | Opens the API (`127.0.0.1:8018`) and the dashboard dev server (`127.0.0.1:3018`) in two windows |
+| `start-studio.bat --check` | Verifies uv, npm, the venv and dashboard dependencies, then exits |
+
+The launchers never enable the scheduler, never approve a job and never publish anything.
+
+## Produce a local demo
 
 Run from the repository root:
 
 ```bash
-uv run python scripts/run_pipeline.py --title "Demo cahaya dari masa lalu" --stop storyboard
+uv run python scripts/run_pipeline.py --title "Demo cahaya dari masa lalu" --stop approval
 # Copy the actual job ID printed by the command:
-uv run python scripts/run_pipeline.py --resume JOB_ID --stop render
-uv run python scripts/verify_video.py JOB_ID --frames
+uv run python scripts/verify_video.py JOB_ID
+uv run python scripts/approve.py --list
 ```
 
-The first command uses mock **LLM content**. The second uses the real network-backed Edge TTS service and local Remotion/FFmpeg rendering. It is not a fully offline workflow. No paid LLM completion is required for this demo.
+The pipeline uses mock **LLM content**, real network-backed Edge TTS, and local Remotion/FFmpeg rendering. It is not fully offline. No paid LLM completion is required for this demo. The pipeline stops at `READY_FOR_APPROVAL`; it does not approve or upload the job.
 
-Output: `data/jobs/JOB_ID/output.mp4`. A visible `DEMO / MOCK SCRIPT` watermark distinguishes fixture content. Repeating the resume command validates and reuses completed artifacts rather than rerendering.
+Output: `data/jobs/JOB_ID/output.mp4` and, when metadata supplies a thumbnail concept, `data/jobs/JOB_ID/thumbnail.png`. A visible `DEMO / MOCK SCRIPT` watermark distinguishes fixture content. Repeating `uv run python scripts/run_pipeline.py --resume JOB_ID --stop approval` validates and reuses completed media. Mock jobs cannot be published.
 
-The verified sample in this workspace is:
-
-`data/jobs/89b158426e7a4011/output.mp4`
-
-It is 36.608 seconds, 1080×1920, 30 FPS, H.264/AAC, with four scenes and eighteen subtitle cues. Evidence is in the same job directory under `evidence/`. Technical success does not mark editorial or factual review as passed.
+The verified local sample is `data/jobs/45dd2b1b1b914db0/output.mp4`: 36.608 seconds, 1080×1920, 30 FPS, H.264/AAC, four scenes, 18 subtitle cues, and 16 passing technical checks. Its `approval.json` reports 10/10 checks, but factual sources remain `needs_review` because the content provider is mock.
 
 ## Providers and configuration
 
@@ -53,6 +66,7 @@ It is 36.608 seconds, 1080×1920, 30 FPS, H.264/AAC, with four scenes and eighte
 - `--live` selects configured model adapters and disables mock fallback. Unavailable providers cause an explicit failed/blocked job.
 - The worker model configured in this environment is `tig/deepseek-v4.1-flash` on the local router.
 - The strategist CLI uses the configured alias `opus`. That alias is **not evidence of the exact Claude Opus 5.5 model/version**.
+- The strategist chain is `claude-cli` → `codex-cli` → mock, so a failed Claude CLI call falls through to the locally authenticated Codex CLI (`CODEX_CLI_MODEL`, default `gpt-6.1-sol`) before any fixture is used. The Codex adapter runs `codex exec --json` in a throwaway read-only directory with shell, browser, computer-use, plugin and multi-agent features disabled, and never echoes CLI diagnostics because they can contain credential fragments.
 - Claude completions disable tools, inherited MCP servers and session persistence; prompts are supplied over stdin. These tightened options have adapter tests and were checked against the installed CLI help. A full live production run with these options has not been revalidated.
 - `scripts/probe_providers.py` reports availability without a completion by default. Its explicit `--live` diagnostic spends a completion per live adapter and is not a production job. Production usage accounting should be used for budget-controlled runs instead.
 - Daily usage is persisted per job. The current USD rates are **unverified estimates**, not the third-party provider's invoice. The guard checks recorded totals before calls; it is not a concurrent cost reservation or a strict provider-side spending cap. Do not treat this milestone as an unattended paid runner.
@@ -64,14 +78,19 @@ uv run pytest
 uv run ruff check packages/core scripts tests
 uv run python scripts/export_schemas.py --check
 uv run python scripts/check_secrets.py
-cd packages/video
-npm run typecheck
+cd packages/video && npm run typecheck && node scripts/test-scene-data.mjs
+node scripts/still-smoke.mjs "$(node -p 'require("path").resolve("../../data/renders/still-smoke")')"
+cd ../../apps/dashboard && npm run typecheck && npm test && npm run build && npm run test:e2e
 ```
 
-The default tests isolate databases/artifacts and mock network/model boundaries. An audio integration test uses explicitly labelled generated test audio with real FFmpeg/FFprobe, without contacting TTS.
+The six-template still smoke saves its PNGs under ignored `data/renders/still-smoke/`. Tests isolate databases/artifacts and mock network/model boundaries. One audio integration test uses explicitly labelled generated test audio with real FFmpeg/FFprobe; the end-to-end media sample used real Edge TTS.
 
-## Boundaries and next milestones
+## Operator surfaces and remaining limits
 
-FastAPI routes, the Next.js dashboard, seven-day planning, startup services, recurring scheduling, source retrieval/claim verification, licensed BGM/SFX, thumbnail production, and YouTube OAuth/upload controls are not implemented yet. No scheduler, startup task, cron job, account connection, upload or public publishing was enabled.
+- [Studio setup and measurements](docs/STUDIO.md): local read-only API and dashboard.
+- [Editorial approval](docs/APPROVAL.md): explicit local review decisions. A mock job may be locally eligible but cannot pass publishing's live-only gate.
+- [Media](docs/MEDIA.md): licensed asset manifest, six render templates, mixing and thumbnail checks.
+- [Scheduler](docs/SCHEDULER.md): persisted seven-day plans and dispatch; disabled by default. No startup/reboot service is registered.
+- [Publishing](docs/PUBLISHING.md): installed-app OAuth and private-first operator CLI; offline-tested only. No account connection, upload, remote schedule or public publication was performed in this milestone.
 
-See [implementation status](docs/IMPLEMENTATION_STATUS.md), [render runbook](docs/RENDER_RUNBOOK.md), and [AGENTS.md](AGENTS.md).
+Live provider end-to-end behavior and YouTube upload still need separately authorized operator action. See [implementation status](docs/IMPLEMENTATION_STATUS.md) and [AGENTS.md](AGENTS.md).

@@ -1,0 +1,218 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "CreativeReview": {
+      "properties": {
+        "verdict": {
+          "default": "approve",
+          "enum": [
+            "approve",
+            "revise",
+            "reject"
+          ],
+          "title": "Verdict",
+          "type": "string"
+        },
+        "weak_spots": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Weak Spots",
+          "type": "array"
+        },
+        "revisions": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Revisions",
+          "type": "array"
+        },
+        "notes": {
+          "default": "",
+          "title": "Notes",
+          "type": "string"
+        }
+      },
+      "title": "CreativeReview",
+      "type": "object"
+    },
+    "Genre": {
+      "enum": [
+        "educational",
+        "science",
+        "history",
+        "mystery",
+        "fiction",
+        "general_knowledge",
+        "animated_narrative"
+      ],
+      "title": "Genre",
+      "type": "string"
+    },
+    "Script": {
+      "properties": {
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "genre": {
+          "$ref": "#/$defs/Genre"
+        },
+        "content_type": {
+          "default": "factual",
+          "enum": [
+            "factual",
+            "fictional"
+          ],
+          "title": "Content Type",
+          "type": "string"
+        },
+        "segments": {
+          "items": {
+            "$ref": "#/$defs/ScriptSegment"
+          },
+          "title": "Segments",
+          "type": "array"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/SourceRef"
+          },
+          "title": "Sources",
+          "type": "array"
+        },
+        "estimated_duration_s": {
+          "default": 40,
+          "maximum": 90,
+          "minimum": 15,
+          "title": "Estimated Duration S",
+          "type": "integer"
+        },
+        "verification_status": {
+          "$ref": "#/$defs/VerificationStatus",
+          "default": "needs_review"
+        }
+      },
+      "required": [
+        "title",
+        "genre",
+        "segments"
+      ],
+      "title": "Script",
+      "type": "object"
+    },
+    "ScriptSegment": {
+      "properties": {
+        "kind": {
+          "enum": [
+            "hook",
+            "body",
+            "payoff"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "text"
+      ],
+      "title": "ScriptSegment",
+      "type": "object"
+    },
+    "SourceRef": {
+      "properties": {
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Url"
+        },
+        "publisher": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Publisher"
+        },
+        "published": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Published"
+        },
+        "accessed": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Accessed"
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "title": "SourceRef",
+      "type": "object"
+    },
+    "VerificationStatus": {
+      "enum": [
+        "supported",
+        "needs_review",
+        "unsupported",
+        "fictional"
+      ],
+      "title": "VerificationStatus",
+      "type": "string"
+    }
+  },
+  "properties": {
+    "review": {
+      "$ref": "#/$defs/CreativeReview"
+    },
+    "script": {
+      "$ref": "#/$defs/Script"
+    },
+    "source_script": {
+      "$ref": "#/$defs/Script"
+    }
+  },
+  "required": [
+    "review",
+    "script",
+    "source_script"
+  ],
+  "title": "CreativeDraftArtifact",
+  "type": "object"
+}

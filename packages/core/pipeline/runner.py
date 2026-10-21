@@ -5,13 +5,34 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..agents import CreativeDirectorAgent, MetadataAgent, QualityAgent, ResearchAgent, ScriptAgent, StoryboardAgent, TopicSelectionAgent
+from ..agents import (
+    ClaimExtractorAgent,
+    CreativeDirectorAgent,
+    MetadataAgent,
+    QualityAgent,
+    ResearchAgent,
+    ScriptAgent,
+    StoryboardAgent,
+    TopicSelectionAgent,
+)
+from ..approval import ApprovalRejected, evaluate as evaluate_approval
 from ..artifacts import validate_artifact
 from ..config import Settings, get_settings
+from ..media.process import json_hash
 from ..orchestration import JobState, JobStore
+from ..orchestration.leases import LeaseKeeper, LeaseLostError
 from ..orchestration.states import PIPELINE_ORDER, can_transition
+from ..observability.events import safe_text
+from ..observability.lifecycle import RunObserver
 from ..providers import BudgetExceededError, ProviderError, build_router
-from ..schemas import Genre, ResearchResult, Script, Storyboard, TopicCandidate
+from ..research import (
+    FetchedSource,
+    build_report,
+    check_originality,
+    fetch_sources,
+    prior_scripts_from,
+)
+from ..schemas import CreativeReview, Genre, ResearchResult, Script, Storyboard, TopicCandidate, VerificationStatus
 
 DEFAULT_GENRES = list(Genre)
 
@@ -64,6 +85,8 @@ class PipelineRunner:
             (JobState.AUDIO_READY, "audio.json", self._audio),
             (JobState.RENDERING, "render.json", self._render),
             (JobState.TECHNICAL_QC, "qc.json", self._technical_qc),
+            (JobState.EDITORIAL_QC, "editorial_qc.json", self._editorial_qc),
+            (JobState.READY_FOR_APPROVAL, "approval.json", self._approval_gate),
         ]
 
     def _read(self, job_id: str, name: str) -> dict[str, Any]:
@@ -111,14 +134,110 @@ class PipelineRunner:
 
     def _creative(self, job_id: str) -> None:
         script = self._script_model(job_id)
-        agent = CreativeDirectorAgent(self.router)
-        review = agent.run(script)
-        if review.verdict == "reject":
-            raise ValueError("creative review rejected script")
-        revised = agent.apply(script, review)
+        draft_path = self.store.artifact_root(job_id) / "creative_draft.json"
+        if draft_path.is_file():
+            draft = self._read(job_id, "creative_draft.json")
+            reviewed = Script.model_validate(draft["source_script"])
+            revised = Script.model_validate(draft["script"])
+            review = CreativeReview.model_validate(draft["review"])
+            fingerprint = json_hash(script.model_dump(mode="json", exclude={"verification_status"}, exclude_none=True))
+            allowed = {json_hash(item.model_dump(mode="json", exclude={"verification_status"}, exclude_none=True))
+                       for item in (reviewed, revised)}
+            if fingerprint not in allowed or review.verdict == "reject":
+                raise ValueError("creative draft no longer matches script")
+        else:
+            agent = CreativeDirectorAgent(self.router)
+            review = agent.run(script)
+            if review.verdict == "reject":
+                raise ValueError("creative review rejected script")
+            revised = agent.apply(script, review)
+            self.store.write_artifact(job_id, "creative_draft.json", {
+                "source_script": script.model_dump(mode="json"),
+                "review": review.model_dump(mode="json"),
+                "script": revised.model_dump(mode="json"),
+            })
+        if script.model_dump(mode="json", exclude={"verification_status"}) != revised.model_dump(
+                mode="json", exclude={"verification_status"}):
+            self.store.write_artifact(job_id, "script.json", revised.model_dump(mode="json"))
+        self._evidence(job_id, self._script_model(job_id))
         self.store.write_artifact(job_id, "review.json", {
-            "review": review.model_dump(mode="json"), "script": revised.model_dump(mode="json")})
-        self.store.write_artifact(job_id, "script.json", revised.model_dump(mode="json"))
+            "review": review.model_dump(mode="json"), "script": self._script_model(job_id).model_dump(mode="json")})
+
+    def _evidence(self, job_id: str, script: Script) -> None:
+        """Read the cited sources, verify the script's claims, and check originality.
+
+        Fixture runs never touch the network, so retrieval is recorded as skipped
+        rather than pretending a page was read, and the originality gate is only
+        enforced against real production history because fixture scripts are
+        identical by design. In live mode both are enforced and fail the job.
+        """
+        note = ""
+        if script.content_type != "factual":
+            verification: dict[str, Any] = {
+                "status": VerificationStatus.fictional.value,
+                "retrieval": "not_applicable",
+                "note": "fictional script carries no claim to verify",
+            }
+        else:
+            retrieval = "skipped_mock" if self.force_mock else "live"
+            sources: list[FetchedSource] = [] if retrieval == "skipped_mock" else fetch_sources(
+                [s.url for s in script.sources if s.url]
+            )
+            try:
+                claims = ClaimExtractorAgent(self.router).run(
+                    script, sources=[{"url": s.url, "text": s.text} for s in sources if s.status == "ok"],
+                )
+            except (ProviderError, ValueError, OSError, RuntimeError) as exc:
+                claims = []
+                note = f"claim extraction unavailable: {type(exc).__name__}"
+            report = build_report(claims, sources)
+            verification = {
+                "status": report.status.value,
+                "retrieval": retrieval,
+                "checks": [check.as_dict() for check in report.checks],
+                "sources": [source.as_dict(include_text=True) for source in sources],
+                "retrieved": report.retrieved,
+                "note": note,
+            }
+        status = VerificationStatus(verification["status"])
+        if status is not script.verification_status:
+            script = script.model_copy(update={"verification_status": status})
+            self.store.write_artifact(job_id, "script.json", script.model_dump(mode="json"))
+        verification["script_sha256"] = json_hash(script.model_dump(mode="json", exclude_none=True))
+        self.store.write_artifact(job_id, "verification.json", verification)
+
+        originality = check_originality(
+            script.full_text,
+            prior_scripts_from(self.store, exclude_job_id=job_id),
+            enforced=not self.force_mock,
+        )
+        self.store.write_artifact(job_id, "originality.json", {
+            "script_text_sha256": json_hash({"text": script.full_text}),
+            "verdict": originality.verdict,
+            "max_similarity": originality.max_similarity,
+            "nearest_job_id": originality.nearest_job_id,
+            "nearest_title": originality.nearest_title,
+            "compared": originality.compared,
+            "threshold": originality.threshold,
+            "enforced": originality.enforced,
+            "note": originality.note,
+        })
+        if originality.too_similar and originality.enforced:
+            raise ValueError(f"originality check failed: {originality.note}")
+
+    def _ensure_evidence(self, job_id: str) -> None:
+        script = self._script_model(job_id)
+        try:
+            verification = self._read(job_id, "verification.json")
+            originality = self._read(job_id, "originality.json")
+        except (OSError, ValueError, KeyError):
+            self._evidence(job_id, script)
+            return
+        if (verification["script_sha256"] != json_hash(script.model_dump(mode="json", exclude_none=True)) or
+                originality["script_text_sha256"] != json_hash({"text": script.full_text})):
+            self._evidence(job_id, script)
+        elif originality["enforced"] and originality["verdict"] == "too_similar":
+            raise ValueError(f"originality check failed: {originality['note']}")
 
     def _storyboard(self, job_id: str) -> None:
         p = self.settings.production
@@ -132,7 +251,7 @@ class PipelineRunner:
 
     def _assets(self, job_id: str) -> None:
         from ..media.assets import AssetAgent
-        manifest = AssetAgent().run(self._storyboard_model(job_id))
+        manifest = AssetAgent().run(self._storyboard_model(job_id), self.store.artifact_root(job_id))
         self.store.write_artifact(job_id, "assets.json", manifest.model_dump(mode="json"))
 
     def _audio(self, job_id: str) -> None:
@@ -143,13 +262,17 @@ class PipelineRunner:
             cancelled=lambda: self._cancelled(job_id))
         self.store.write_artifact(job_id, "storyboard.json", timed.model_dump(mode="json", exclude_none=True))
         self.store.write_artifact(job_id, "audio.json", audio.model_dump(mode="json"))
+        if audio.mix is not None:
+            # Sidecar receipt for operator inspection; audio.json stays authoritative.
+            self.store.write_artifact(job_id, "mix.json", audio.mix.model_dump(mode="json"))
 
     def _render(self, job_id: str) -> None:
         from ..media.contracts import AudioArtifact
         from ..media.render import RenderAgent
         audio = AudioArtifact.model_validate(self._read(job_id, "audio.json"))
         render = RenderAgent().run(self._script_model(job_id), self._storyboard_model(job_id), audio,
-                                   self.store.artifact_root(job_id), cancelled=lambda: self._cancelled(job_id))
+                                   self.store.artifact_root(job_id), cancelled=lambda: self._cancelled(job_id),
+                                   progress=self.observer.render_progress)
         self.store.write_artifact(job_id, "render.json", render.model_dump(mode="json"))
 
     def _technical_qc(self, job_id: str) -> None:
@@ -161,22 +284,90 @@ class PipelineRunner:
                                cancelled=lambda: self._cancelled(job_id))
         self.store.write_artifact(job_id, "qc.json", qc.model_dump(mode="json"))
 
-    def _draft_checks(self, job_id: str, report: PipelineReport) -> None:
+    def _editorial_qc(self, job_id: str) -> None:
+        """Editorial gate that reads the artifacts instead of asking a model again.
+
+        The LLM editorial pass already ran on the draft (draft_qc.json); what it
+        could not see is the rendered media, the verification report and the
+        originality verdict. Those are hard facts on disk, so this stage checks
+        them deterministically and only writes its own verdict.
+        """
+        current = self.store.get(job_id).state
+        if can_transition(current, JobState.EDITORIAL_QC):
+            # Enter the stage first so an ineligible verdict has a legal target
+            # to reject from; TECHNICAL_QC may not reject directly.
+            self.store.transition(job_id, JobState.EDITORIAL_QC, detail="editorial gate opened")
+        report = evaluate_approval(self.store, job_id)
+        payload = {
+            "overall": "pass" if report.eligible else "fail",
+            "checks": report.checks,
+            "inputs_sha256": report.inputs_sha256,
+            "notes": ["deterministic gate over written artifacts; no model consulted at this stage"],
+        }
+        self.store.write_artifact(job_id, "editorial_qc.json", payload)
+        if not report.eligible:
+            raise ApprovalRejected("; ".join(report.blockers))
+
+    def _approval_gate(self, job_id: str) -> None:
+        """Record eligibility and stop; the operator approves in a separate step."""
+        report = evaluate_approval(self.store, job_id)
+        self.store.write_artifact(job_id, "approval.json", report.as_dict())
+        if not report.eligible:
+            raise ApprovalRejected("; ".join(report.blockers))
+
+    def _draft_checks(self, job_id: str, report: PipelineReport, *, enforce: bool = True) -> None:
         script, storyboard = self._script_model(job_id), self._storyboard_model(job_id)
         root = self.store.artifact_root(job_id)
-        if not (root / "draft_qc.json").exists():
+        script_data = script.model_dump(mode="json", exclude_none=True)
+        inputs_hash = json_hash({"script": script_data, "storyboard": storyboard.model_dump(mode="json", exclude_none=True)})
+        reused_review = ((root / "draft_qc.json").exists() and
+                         self._read(job_id, "draft_qc.json").get("inputs_sha256") == inputs_hash)
+        if not reused_review:
+            self.observer.started("DRAFT_QC")
             review = QualityAgent(self.router).run(storyboard, script)
+            review["inputs_sha256"] = inputs_hash
             self.store.write_artifact(job_id, "draft_qc.json", review)
         review = self._read(job_id, "draft_qc.json")
         passed = review["overall"] != "fail" and review["editorial"]["pass"]
         report.stages.append(StageReport("DRAFT_QC", passed, "draft_qc.json", detail="draft only; no rendered media verification"))
-        if not passed:
+        if not passed and enforce:
             raise ValueError("draft editorial review failed")
-        if not (root / "metadata.json").exists():
-            meta = MetadataAgent(self.router).run(script)
-            self.store.write_artifact(job_id, "metadata.json", meta.model_dump(mode="json"))
+        self.observer.completed("DRAFT_QC", reused=reused_review)
+        if not passed:
+            return
+        script_hash = json_hash(script_data)
+        reused_metadata = ((root / "metadata.json").exists() and
+                           self._read(job_id, "metadata.json").get("script_sha256") == script_hash)
+        if not reused_metadata:
+            self.observer.started("METADATA")
+            meta = MetadataAgent(self.router).run(script).model_dump(mode="json")
+            meta["script_sha256"] = script_hash
+            self.store.write_artifact(job_id, "metadata.json", meta)
         self._read(job_id, "metadata.json")
+        self.observer.completed("METADATA", reused=reused_metadata)
         report.stages.append(StageReport("METADATA", True, "metadata.json"))
+        if (root / "assets.json").is_file():
+            self._thumb(job_id, report)
+
+    def _thumb(self, job_id: str, report: PipelineReport) -> None:
+        """Render the thumbnail still; the agent reuses a still-valid cached PNG."""
+        from ..media.contracts import AssetManifest
+        from ..media.thumbnail import ThumbnailAgent
+        metadata = self._read(job_id, "metadata.json")
+        headline = (metadata.get("thumbnail") or {}).get("text")
+        started = time.perf_counter()
+        if not isinstance(headline, str) or not 1 <= len(headline.strip()) <= 32:
+            report.stages.append(StageReport("THUMBNAIL", True, detail="metadata carries no thumbnail concept"))
+            return
+        self.observer.started("THUMBNAIL")
+        assets = AssetManifest.model_validate(self._read(job_id, "assets.json"))
+        thumb = ThumbnailAgent().run(self._storyboard_model(job_id), metadata,
+                                     self.store.artifact_root(job_id), assets=assets)
+        self.store.write_artifact(job_id, "thumbnail.json", thumb.model_dump(mode="json"))
+        self._read(job_id, "thumbnail.json")
+        self.observer.completed("THUMBNAIL")
+        report.stages.append(StageReport("THUMBNAIL", True, "thumbnail.json",
+                                         elapsed_ms=int((time.perf_counter() - started) * 1000)))
 
     def run(self, job_id: str, *, stop_at: JobState = JobState.STORYBOARD_READY) -> PipelineReport:
         stages = self._stages()
@@ -187,65 +378,117 @@ class PipelineRunner:
         if record.state in {JobState.CANCELLED, JobState.PUBLISHED, JobState.REJECTED}:
             report.final_state, report.blocked_reason = record.state.value, "terminal job cannot be resumed"
             return report
-        if not self.store.try_lock(job_id):
+        if record.state in {JobState.APPROVED, JobState.PRIVATE_UPLOAD, JobState.SCHEDULED}:
+            report.final_state, report.blocked_reason = record.state.value, "operator/publishing workflow owns this job"
+            return report
+        token = self.store.acquire_lease(job_id)
+        if token is None:
             report.final_state, report.blocked_reason = record.state.value, "job is already running (lock held)"
             return report
         self.router.job_id = job_id
         current_stage = "PREFLIGHT"
+        observer = None
         try:
-            mode = "mock" if self.force_mock else "live"
-            prior_mode = record.payload.get("provider_mode")
-            if prior_mode and prior_mode != mode:
-                raise ValueError("provider mode cannot change for an existing job")
-            if not prior_mode:
-                if (self.store.artifact_root(job_id) / "research.json").exists():
-                    raise ValueError("legacy job lacks provider provenance; start a new job")
-                self.store.transition(job_id, record.state, payload_patch={"provider_mode": mode}, detail="provider mode set")
-            if record.state in {JobState.FAILED, JobState.BLOCKED}:
-                self.store.transition(job_id, JobState.IDEA_DISCOVERY, detail="resume from validated artifacts")
-            for state, artifact, run_stage in stages:
-                current_stage = state.value
-                if self.store.get(job_id).state is JobState.CANCELLED:
-                    report.blocked_reason = "cancelled by operator"
-                    break
-                started = time.perf_counter()
-                reused = (self.store.artifact_root(job_id) / artifact).exists()
-                if reused:
-                    data = self._read(job_id, artifact)
-                    if artifact == "review.json" and data["review"]["verdict"] == "reject":
-                        raise ValueError("stored creative review rejected script")
-                else:
-                    if state is JobState.RENDERING and self.store.get(job_id).state is JobState.AUDIO_READY:
-                        self.store.transition(job_id, state, detail="render started under exclusive job lock")
-                    run_stage(job_id)
-                    self._read(job_id, artifact)
-                current = self.store.get(job_id).state
-                if state is not JobState.IDEA_DISCOVERY and current is not state:
-                    if can_transition(current, state):
-                        self.store.transition(job_id, state, detail=f"{artifact} {'reused' if reused else 'validated'}")
-                    elif current not in PIPELINE_ORDER or PIPELINE_ORDER.index(current) < PIPELINE_ORDER.index(state):
-                        raise ValueError(f"cannot advance from {current.value} to {state.value}")
-                report.stages.append(StageReport(state.value, True, artifact, int((time.perf_counter() - started) * 1000),
-                                                "reused existing artifact" if reused else "; ".join(self.router.last_notes)))
-                if state is stop_at:
-                    break
-            if stop_at is JobState.STORYBOARD_READY and not report.blocked_reason:
-                current_stage = "DRAFT_CHECKS"
-                self._draft_checks(job_id, report)
-        except BudgetExceededError as exc:
-            current = self.store.get(job_id).state
-            if can_transition(current, JobState.BLOCKED):
-                self.store.transition(job_id, JobState.BLOCKED, detail=str(exc))
-            report.blocked_reason = str(exc)
-            report.stages.append(StageReport(current_stage, False, detail=str(exc)))
-        except (ProviderError, ValueError, KeyError, OSError, RuntimeError) as exc:
-            current = self.store.get(job_id).state
-            detail = f"{type(exc).__name__}: {str(exc)[:400]}"
-            if can_transition(current, JobState.FAILED):
-                self.store.transition(job_id, JobState.FAILED, error=detail)
-            report.stages.append(StageReport(current_stage, False, detail=detail))
+            with LeaseKeeper(self.store, job_id, token) as keeper:
+                try:
+                    mode = "mock" if self.force_mock else "live"
+                    observer = self.observer = RunObserver(self.store, job_id, source="mock" if self.force_mock else "production")
+                    observer.start()
+                    prior_mode = record.payload.get("provider_mode")
+                    if prior_mode and prior_mode != mode:
+                        raise ValueError("provider mode cannot change for an existing job")
+                    if not prior_mode:
+                        if (self.store.artifact_root(job_id) / "research.json").exists():
+                            raise ValueError("legacy job lacks provider provenance; start a new job")
+                        keeper.check()
+                        self.store.transition(job_id, record.state, payload_patch={"provider_mode": mode}, detail="provider mode set")
+                    if record.state in {JobState.FAILED, JobState.BLOCKED}:
+                        keeper.check()
+                        self.store.transition(job_id, JobState.IDEA_DISCOVERY, detail="resume from validated artifacts")
+                    for state, artifact, run_stage in stages:
+                        current_stage = state.value
+                        keeper.check()
+                        if self.store.get(job_id).state is JobState.CANCELLED:
+                            report.blocked_reason = "cancelled by operator"
+                            break
+                        if state is JobState.EDITORIAL_QC:
+                            self._draft_checks(job_id, report, enforce=False)
+                            keeper.check()
+                        started = time.perf_counter()
+                        reused = (self.store.artifact_root(job_id) / artifact).exists() and state not in {
+                            JobState.EDITORIAL_QC, JobState.READY_FOR_APPROVAL,
+                        }
+                        if reused:
+                            data = self._read(job_id, artifact)
+                            if artifact == "review.json" and data["review"]["verdict"] == "reject":
+                                raise ValueError("stored creative review rejected script")
+                            if artifact == "review.json":
+                                self._ensure_evidence(job_id)
+                            if artifact == "editorial_qc.json" and data["overall"] != "pass":
+                                raise ApprovalRejected("; ".join(data.get("notes", [])) or "stored editorial gate did not pass")
+                            if artifact == "approval.json" and not data["eligible"]:
+                                raise ApprovalRejected("; ".join(data["blockers"]))
+                        else:
+                            observer.started(state.value)
+                            if state is JobState.RENDERING and self.store.get(job_id).state is JobState.AUDIO_READY:
+                                keeper.check()
+                                self.store.transition(job_id, state, detail="render started under exclusive job lock")
+                            run_stage(job_id)
+                            keeper.check()
+                            self._read(job_id, artifact)
+                        keeper.check()
+                        observer.completed(state.value, reused=reused)
+                        current = self.store.get(job_id).state
+                        if state is not JobState.IDEA_DISCOVERY and current is not state:
+                            if can_transition(current, state):
+                                keeper.check()
+                                self.store.transition(job_id, state, detail=f"{artifact} {'reused' if reused else 'validated'}")
+                            elif current not in PIPELINE_ORDER or PIPELINE_ORDER.index(current) < PIPELINE_ORDER.index(state):
+                                raise ValueError(f"cannot advance from {current.value} to {state.value}")
+                        report.stages.append(StageReport(state.value, True, artifact, int((time.perf_counter() - started) * 1000),
+                                                        "reused existing artifact" if reused else "; ".join(self.router.last_notes)))
+                        if state is stop_at:
+                            break
+                    if stop_at is JobState.STORYBOARD_READY and not report.blocked_reason:
+                        current_stage = "DRAFT_CHECKS"
+                        self._draft_checks(job_id, report)
+                        keeper.check()
+                except BudgetExceededError as exc:
+                    keeper.check()
+                    if observer:
+                        observer.failed(blocked=True, error_type=type(exc).__name__)
+                    current = self.store.get(job_id).state
+                    if can_transition(current, JobState.BLOCKED):
+                        self.store.transition(job_id, JobState.BLOCKED, detail=safe_text(str(exc)))
+                    report.blocked_reason = safe_text(str(exc))
+                    report.stages.append(StageReport(current_stage, False, detail=safe_text(str(exc))))
+                except ApprovalRejected as exc:
+                    keeper.check()
+                    if observer:
+                        observer.failed(error_type="ApprovalRejected")
+                    current = self.store.get(job_id).state
+                    detail = safe_text(f"ApprovalRejected: {exc}", 400)
+                    if can_transition(current, JobState.REJECTED):
+                        self.store.transition(job_id, JobState.REJECTED, error=detail)
+                    report.stages.append(StageReport(current_stage, False, detail=detail))
+                except (ProviderError, ValueError, KeyError, OSError, RuntimeError) as exc:
+                    keeper.check()
+                    if observer:
+                        observer.failed(error_type=type(exc).__name__)
+                    current = self.store.get(job_id).state
+                    detail = safe_text(f"{type(exc).__name__}: {exc}", 400)
+                    if can_transition(current, JobState.FAILED):
+                        self.store.transition(job_id, JobState.FAILED, error=detail)
+                    report.stages.append(StageReport(current_stage, False, detail=detail))
+        except LeaseLostError:
+            report.blocked_reason = "job lease ownership lost"
+            report.stages.append(StageReport(current_stage, False, detail=report.blocked_reason))
         finally:
-            self.store.unlock(job_id)
+            try:
+                if observer:
+                    observer.finish(self.store.get(job_id).state.value)
+            finally:
+                self.store.release_lease(job_id, token)
         report.final_state = self.store.get(job_id).state.value
         return report
 

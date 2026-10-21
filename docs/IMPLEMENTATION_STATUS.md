@@ -23,7 +23,9 @@ FFprobe checks, checksum verification and FFmpeg black/silence/freeze scanning p
 
 Both implemented templates passed standalone `remotion still`. The resume command reused the completed media and did not make another provider or TTS call.
 
-## Phase assessment
+## Phase assessment (original media milestone; current status below)
+
+The table and historical build order below describe the earlier two-template checkpoint. For the current six-template, approval and publishing status, use the production completion milestone and `docs/superpowers/plans/2026-10-21-production-completion.md`.
 
 | Phase | State | Evidence or missing work |
 | --- | --- | --- |
@@ -31,9 +33,9 @@ Both implemented templates passed standalone `remotion still`. The resume comman
 | Video engine | Working milestone | Two real template implementations, two standalone stills, real validated MP4 |
 | AI pipeline | Mock pipeline working; live incomplete | Adapters, schemas, routing, usage and persistence exist; a complete live-only run has not passed the tightened integration |
 | Audio/visual integration | Core narration path working | Real TTS, measured timing, subtitles, transitions, normalization and technical QC; only generated vectors, no BGM/SFX library |
-| Dashboard/API | Not implemented | Existing directories are reserved, not a running application |
-| Automation | Not enabled | SQLite/resume primitives exist; calendar, scheduler, startup recovery service and seven-day backlog remain |
-| Publishing | Not implemented | No OAuth, upload or publishing side effect has occurred |
+| Dashboard/API | Working | `apps/api` snapshot/SSE/video routes plus the `apps/dashboard` console; measured in `docs/STUDIO.md` |
+| Automation | Implemented, disabled by default | Seven-day planner, persisted dispatch, token-owned leases and retry caps live in `packages/core/orchestration/{planner,scheduler,leases}.py` with `scripts/schedule.py` and `docs/SCHEDULER.md`; the operator enable switch defaults off and no startup registration was added |
+| Publishing | Implemented offline, never exercised live | Installed-app OAuth, resumable transport, private-first receipts and uncertain-recovery in `packages/core/publishing/`, `scripts/publish.py`, `docs/PUBLISHING.md`. No account was connected, no upload happened, nothing was scheduled remotely |
 
 ## Changes delivered in this milestone
 
@@ -54,6 +56,7 @@ Both implemented templates passed standalone `remotion still`. The resume comman
 - `MotionComic`, `HistoricalTimeline`, `ParallaxStory` and `InfographicMotion` are declared categories, not implemented renderers. Asset resolution rejects them instead of silently substituting another renderer.
 - Edge TTS needs network access; there is no offline voice fallback yet. No paid image/video service or music download was added.
 - Live adapter changes are unit-tested, but their full paid end-to-end workflow still needs a bounded operator-reviewed integration run. The CLI alias `opus` does not establish Opus 5.5 identity.
+- The Codex CLI fallback (`gpt-6.1-sol`) is wired and unit-tested against the CLI's JSON event stream, but this machine's Codex login currently answers `401 Incorrect API key` for every model, including the configured default. The adapter's health probe only checks that the binary runs, so `codex-cli` looks healthy until a completion is attempted; the router then benches it after three failed calls and the strategist chain reaches mock. Set `CODEX_CLI_ENABLED=0` while the login is broken, or re-authenticate the CLI, before relying on it for live review.
 - USD estimates are not verified reseller prices. Budget reservations, per-call worst-case accounting, verified cost configuration and isolated accounting for manual diagnostics remain before unattended paid runs.
 - Locks have a thirty-minute stale threshold. Owned lease tokens, periodic heartbeats and reboot recovery service tests remain before unattended or multi-worker operation.
 - Cancellation is cooperative at stage/subprocess boundaries. A TTS request in progress is bounded by its timeout; there is no dashboard cancellation control yet.
@@ -62,10 +65,37 @@ Both implemented templates passed standalone `remotion still`. The resume comman
 
 ## Build order after this milestone
 
-1. Add FastAPI read/status/artifact routes and a small dashboard previewing the real job artifacts.
-2. Add source retrieval, claim verification, originality checks and proper non-mock editorial approval gates.
+1. ~~Add FastAPI read/status/artifact routes and a small dashboard previewing the real job artifacts.~~ Done: `apps/api` and `apps/dashboard`, measured in `docs/STUDIO.md`.
+2. Add source retrieval, claim verification, originality checks and proper non-mock editorial approval gates. Retrieval, claim verification and the originality gate are in (`verification.json`, `originality.json`); the editorial approval gate itself is still fixture-driven.
 3. Add validated licensed assets, the other template renderers, music/SFX mixing and thumbnail generation.
 4. Add seven-day planning and persisted scheduling, owned leases, reboot/interrupt tests, and an explicit operator enable switch.
 5. Implement YouTube OAuth and private-upload-first publication, requiring explicit operator approval before any account or upload action.
 
+## Studio milestone (2026-10-20)
+
+A second verified run, `89dc199b959242b3`, reached `TECHNICAL_QC` through the same pipeline while the console was open: 88.6 s wall, 79.8 s of it the real Remotion/FFmpeg render, 6.9 s real Edge TTS, 16/16 technical checks passed, `-16.01 LUFS`. While it rendered, `/api/studio/snapshot` answered at p50 64 ms (p95 113 ms) with zero failures and all 179 events reached the SSE stream. Full numbers, method and the known limits are in `docs/STUDIO.md`; the artifacts are in `evidence/`.
+
 This checkpoint is ready for an operator-requested commit/push. Git history records the publication state; this document does not imply that the remaining production features are complete.
+
+## Production completion milestone (2026-10-21)
+
+The pre-approval pipeline now produces and validates the full artifact set — `metadata.json`, `assets.json`, `thumbnail.json`, `audio.json` with an embedded mix receipt — and approval refuses to open unless each one validates against its schema and its media hashes and dimensions match.
+
+| Property | Observed result |
+| --- | --- |
+| Job | `45dd2b1b1b914db0`, "Mengapa gurun menjadi dingin di malam hari" |
+| State | `READY_FOR_APPROVAL` after 64 s wall (6 s TTS, 53 s render, ~4 s thumbnail) |
+| Thumbnail | `thumbnail.png`, 1080×1920, 1,002,505 bytes, scene `scene-01` frame 134 |
+| Approval | `eligible: true`, 10/10 checks pass, zero blockers |
+| Checks | technical_qc, editorial_review, source_verification, originality, metadata, assets, audio, render, media_integrity, thumbnail |
+| Warm resume | 1.86 s wall, no TTS, no provider call, no re-render, state unchanged |
+| Offline suite | 451 pytest tests, Ruff clean, `tsc --noEmit` clean in `packages/video` and `apps/dashboard`, 13 dashboard unit tests, dashboard build green |
+| Video stills | All six templates pass standalone `remotion still` |
+
+Approval binds to artifact and media fingerprints, so editing `script.json`, `metadata.json` or any validated media after approval invalidates it. `thumbnail.json` and `mix.json` are registered in `ARTIFACT_MODELS` and exported to `config/schemas/`; `audio.json` remains the authoritative mix receipt and `mix.json` is its inspection copy. The thumbnail is served read-only: `GET /api/jobs/{id}/thumbnail` returns the PNG only after the recorded SHA-256 matches, and the console shows the thumbnail plus any approval blockers next to the job.
+
+The pipeline renews its token-owned lease during long stages and checks ownership before state transitions. Concurrency tests cover a blocked stage and an expired lease taken by another worker; the old worker stops without marking the job failed.
+
+Creative review persists `creative_draft.json` before revising the script and writes `review.json` only after verification and originality evidence complete. Resume repairs a missing evidence sidecar or interrupted revision without repeating the creative model call; a draft with changed script inputs is rejected.
+
+Unverified live surface: no YouTube account was connected, no upload occurred, no remote schedule exists, and no paid-model run was executed. Deleting `data/jobs/factory.db` would drop job rows while artifact directories survive; recovery from that state is manual.

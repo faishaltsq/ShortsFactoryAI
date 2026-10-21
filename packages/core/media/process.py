@@ -48,17 +48,32 @@ def _stop_tree(proc: subprocess.Popen) -> None:
 
 
 def run_checked(args: list[str], *, log_path: Path, cwd: Path | None = None,
-                timeout: float = 180, cancelled: Callable[[], bool] | None = None) -> None:
+                timeout: float = 180, cancelled: Callable[[], bool] | None = None,
+                on_output: Callable[[str], None] | None = None) -> None:
     with log_path.open("ab") as output:
+        offset = output.tell()
         proc = subprocess.Popen(args, cwd=cwd, stdout=output, stderr=subprocess.STDOUT, shell=False)
         deadline = time.monotonic() + timeout
+
+        def observe() -> None:
+            nonlocal offset
+            if on_output is not None:
+                with log_path.open("rb") as source:
+                    source.seek(offset)
+                    chunk = source.read(1_048_576)
+                    offset = source.tell()
+                if chunk:
+                    on_output(chunk.decode("utf-8", errors="replace"))
+
         try:
             while proc.poll() is None:
+                observe()
                 if cancelled is not None and cancelled():
                     raise RuntimeError("job cancelled by operator")
                 if time.monotonic() > deadline:
                     raise TimeoutError(f"media command exceeded {timeout}s; see {log_path.name}")
                 time.sleep(0.25)
+            observe()
         except BaseException:
             if proc.poll() is None:
                 _stop_tree(proc)
@@ -70,7 +85,7 @@ def run_checked(args: list[str], *, log_path: Path, cwd: Path | None = None,
 def probe_media(path: Path) -> dict:
     if not path.is_file() or path.stat().st_size == 0:
         raise ValueError("media artifact is missing or empty")
-    result = subprocess.run(["ffprobe", "-v", "error", "-show_format", "-show_streams", "-of", "json", str(path)],
+    result = subprocess.run(["ffprobe", "-v", "error", "-protocol_whitelist", "file,pipe", "-show_format", "-show_streams", "-of", "json", str(path)],
                             capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
     if result.returncode:
         raise ValueError("ffprobe could not decode media artifact")

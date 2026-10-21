@@ -12,6 +12,7 @@ config/token*.json
 data/renders/*
 data/jobs/*
 data/assets/*
+data/*.db*
 !data/renders/.gitkeep
 !data/jobs/.gitkeep
 !data/assets/.gitkeep

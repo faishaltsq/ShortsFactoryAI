@@ -57,7 +57,8 @@
             "EducationalExplainer",
             "HistoricalTimeline",
             "ParallaxStory",
-            "InfographicMotion"
+            "InfographicMotion",
+            "IllustratedStory"
           ],
           "title": "Template",
           "type": "string"

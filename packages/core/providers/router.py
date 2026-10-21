@@ -15,6 +15,7 @@ from pathlib import Path
 from ..config import Settings, get_settings
 from .base import BudgetExceededError, Provider, ProviderError, ProviderResult
 from .claude_cli import ClaudeCliProvider
+from .codex_cli import CodexCliProvider
 from .mock import MockProvider
 from .openai_compat import OpenAICompatProvider
 
@@ -243,8 +244,17 @@ def build_router(settings: Settings | None = None, *, job_id: str | None = None,
             tier="strategist",
             timeout_s=settings.claude_cli.timeout_s,
         ),
-        MockProvider(),
     ]
+    if settings.codex_cli.enabled:
+        strategist_chain.append(
+            CodexCliProvider(
+                binary=settings.codex_cli.binary,
+                model=settings.codex_cli.model,
+                tier="strategist",
+                timeout_s=settings.codex_cli.timeout_s,
+            )
+        )
+    strategist_chain.append(MockProvider())
 
     router = ProviderRouter(
         worker_chain=worker_chain,

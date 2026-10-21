@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "AnchoredSFX": {
+      "properties": {
+        "asset_id": {
+          "title": "Asset Id",
+          "type": "string"
+        },
+        "scene_id": {
+          "title": "Scene Id",
+          "type": "string"
+        },
+        "scene_frame": {
+          "minimum": 0,
+          "title": "Scene Frame",
+          "type": "integer"
+        },
+        "absolute_frame": {
+          "minimum": 0,
+          "title": "Absolute Frame",
+          "type": "integer"
+        },
+        "volume": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Volume",
+          "type": "number"
+        }
+      },
+      "required": [
+        "asset_id",
+        "scene_id",
+        "scene_frame",
+        "absolute_frame",
+        "volume"
+      ],
+      "title": "AnchoredSFX",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "input_narration_path": {
+      "title": "Input Narration Path",
+      "type": "string"
+    },
+    "input_narration_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Input Narration Sha256",
+      "type": "string"
+    },
+    "assets_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Assets Sha256",
+      "type": "string"
+    },
+    "source_manifest_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Manifest Sha256"
+    },
+    "output_path": {
+      "title": "Output Path",
+      "type": "string"
+    },
+    "sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Sha256",
+      "type": "string"
+    },
+    "duration_ms": {
+      "exclusiveMinimum": 0,
+      "title": "Duration Ms",
+      "type": "number"
+    },
+    "target_lufs": {
+      "const": -16,
+      "default": -16,
+      "title": "Target Lufs",
+      "type": "integer"
+    },
+    "integrated_lufs": {
+      "title": "Integrated Lufs",
+      "type": "number"
+    },
+    "true_peak_dbtp": {
+      "maximum": -1,
+      "title": "True Peak Dbtp",
+      "type": "number"
+    },
+    "ducking": {
+      "enum": [
+        "sidechaincompress",
+        "not-applicable"
+      ],
+      "title": "Ducking",
+      "type": "string"
+    },
+    "sfx": {
+      "items": {
+        "$ref": "#/$defs/AnchoredSFX"
+      },
+      "title": "Sfx",
+      "type": "array"
+    },
+    "filter_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Filter Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "input_narration_path",
+    "input_narration_sha256",
+    "assets_sha256",
+    "output_path",
+    "sha256",
+    "duration_ms",
+    "integrated_lufs",
+    "true_peak_dbtp",
+    "ducking",
+    "filter_sha256"
+  ],
+  "title": "AudioMixArtifact",
+  "type": "object"
+}

@@ -12,11 +12,13 @@ from .. import prompts
 from ..jsonutil import extract_model
 from ..providers.router import ProviderRouter
 from ..storyboard_normalize import normalize_storyboard
+from ..research.verification import Claim
 from ..schemas import (
     CreativeReview,
     Genre,
     ResearchResult,
     Script,
+    ScriptClaimList,
     Storyboard,
     TopicCandidate,
     TopicSelection,
@@ -102,6 +104,22 @@ class ScriptAgent(_AgentBase):
         if script.content_type == "factual" and not script.sources:
             raise ValueError("factual script produced without any source reference")
         return script
+
+
+class ClaimExtractorAgent(_AgentBase):
+    """Pull the factual claims out of a finished script so its evidence can be checked."""
+
+    def __init__(self, router: ProviderRouter) -> None:
+        super().__init__(router, name="ClaimExtractorAgent")
+
+    def run(self, script: Script, *, sources: list[dict[str, str]] | None = None) -> list[Claim]:
+        result = self._ask(
+            task="claim_extraction",
+            system=prompts.CLAIM_SYSTEM,
+            user=prompts.claim_user(script.model_dump_json(), sources=sources),
+        )
+        claims = extract_model(result.content, ScriptClaimList).claims
+        return [Claim(statement=c.statement, quote=c.quote, source_url=c.source_url) for c in claims]
 
 
 class CreativeDirectorAgent(_AgentBase):
