@@ -107,6 +107,8 @@ assets.json         resolved assets + licenses
 audio.json          narration path, duration, cues
 render.json         output path, ffprobe result
 qc.json             technical + editorial findings
+verification.json   claim/source verification (fetched text + quote checks)
+originality.json    trigram overlap vs earlier scripts, enforced in live mode
 metadata.json       title/description/keywords/thumbnail
 ```
 

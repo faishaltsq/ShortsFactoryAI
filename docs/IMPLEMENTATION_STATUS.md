@@ -63,7 +63,7 @@ Both implemented templates passed standalone `remotion still`. The resume comman
 ## Build order after this milestone
 
 1. ~~Add FastAPI read/status/artifact routes and a small dashboard previewing the real job artifacts.~~ Done: `apps/api` and `apps/dashboard`, measured in `docs/STUDIO.md`.
-2. Add source retrieval, claim verification, originality checks and proper non-mock editorial approval gates.
+2. Add source retrieval, claim verification, originality checks and proper non-mock editorial approval gates. Retrieval, claim verification and the originality gate are in (`verification.json`, `originality.json`); the editorial approval gate itself is still fixture-driven.
 3. Add validated licensed assets, the other template renderers, music/SFX mixing and thumbnail generation.
 4. Add seven-day planning and persisted scheduling, owned leases, reboot/interrupt tests, and an explicit operator enable switch.
 5. Implement YouTube OAuth and private-upload-first publication, requiring explicit operator approval before any account or upload action.

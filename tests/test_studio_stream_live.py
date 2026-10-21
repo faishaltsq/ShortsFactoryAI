@@ -35,6 +35,11 @@ async def _next_frame(stream, timeout: float) -> str | None:
         return None
 
 
+def _split_frames(chunk: str) -> list[str]:
+    """One yield can carry several SSE frames back to back; split them apart."""
+    return [part + "\n\n" for part in chunk.split("\n\n") if part.strip()]
+
+
 @pytest.mark.asyncio
 async def test_sse_delivers_worker_events_produced_after_the_client_connected(tmp_path):
     from apps.api.streaming import stream_events
@@ -57,15 +62,27 @@ async def test_sse_delivers_worker_events_produced_after_the_client_connected(tm
     try:
         while not worker.done():
             frame = await _next_frame(stream, 5)
-            if frame is not None and "event: studio" in frame:
-                frames.append(frame)
+            if frame is not None:
+                frames.extend(f for f in _split_frames(frame) if "event: studio" in f)
         await worker
-        while True:  # drain what the worker published in its last moments
+        # The lifecycle projection keeps writing for a moment after the worker
+        # returns, so wait for the log to go quiet before draining the stream.
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + 10
+        last_cursor_seen = -1
+        quiet_since = loop.time()
+        while loop.time() < deadline:
+            cursor_now = service.snapshot()["cursor"]
+            if cursor_now != last_cursor_seen:
+                last_cursor_seen, quiet_since = cursor_now, loop.time()
+            elif loop.time() - quiet_since >= 0.6:
+                break
+            await asyncio.sleep(0.1)
+        while True:  # then drain whatever the worker published
             frame = await _next_frame(stream, 0.5)
             if frame is None:
                 break
-            if "event: studio" in frame:
-                frames.append(frame)
+            frames.extend(f for f in _split_frames(frame) if "event: studio" in f)
     except StopAsyncIteration:
         await worker
     await stream.aclose()

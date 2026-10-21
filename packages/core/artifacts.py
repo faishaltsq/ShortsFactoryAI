@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 from functools import lru_cache
 
 from jsonschema import Draft202012Validator
@@ -51,6 +51,43 @@ class DraftQualityArtifact(BaseModel):
     overall: str = Field(pattern="^(pass|warn|fail)$")
 
 
+class ClaimCheckArtifact(BaseModel):
+    statement: str
+    status: str = Field(pattern="^(supported|unsupported|unverified)$")
+    source_url: str = ""
+    quote: str = ""
+    matched: str = ""
+    reason: str = ""
+
+
+class SourceFetchArtifact(BaseModel):
+    url: str
+    status: str
+    chars: int = Field(ge=0, default=0)
+    sha256: str = ""
+    fetched_at: str = ""
+
+
+class VerificationArtifact(BaseModel):
+    status: Literal["supported", "needs_review", "unsupported", "fictional"]
+    retrieval: Literal["live", "skipped_mock", "not_applicable"]
+    checks: list[ClaimCheckArtifact] = Field(default_factory=list)
+    sources: list[SourceFetchArtifact] = Field(default_factory=list)
+    retrieved: int = Field(ge=0, default=0)
+    note: str = ""
+
+
+class OriginalityArtifact(BaseModel):
+    verdict: Literal["original", "too_similar"]
+    max_similarity: float = Field(ge=0, le=1)
+    nearest_job_id: str | None = None
+    nearest_title: str | None = None
+    compared: int = Field(ge=0)
+    threshold: float = Field(ge=0, le=1)
+    enforced: bool
+    note: str = ""
+
+
 ARTIFACT_MODELS: dict[str, type[BaseModel]] = {
     "job.json": JobSnapshot,
     "research.json": ResearchResult,
@@ -59,6 +96,8 @@ ARTIFACT_MODELS: dict[str, type[BaseModel]] = {
     "review.json": ReviewArtifact,
     "storyboard.json": Storyboard,
     "draft_qc.json": DraftQualityArtifact,
+    "verification.json": VerificationArtifact,
+    "originality.json": OriginalityArtifact,
     "metadata.json": VideoMetadata,
     "assets.json": AssetManifest,
     "audio.json": AudioArtifact,

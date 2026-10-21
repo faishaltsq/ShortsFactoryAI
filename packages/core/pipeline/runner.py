@@ -5,7 +5,16 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..agents import CreativeDirectorAgent, MetadataAgent, QualityAgent, ResearchAgent, ScriptAgent, StoryboardAgent, TopicSelectionAgent
+from ..agents import (
+    ClaimExtractorAgent,
+    CreativeDirectorAgent,
+    MetadataAgent,
+    QualityAgent,
+    ResearchAgent,
+    ScriptAgent,
+    StoryboardAgent,
+    TopicSelectionAgent,
+)
 from ..artifacts import validate_artifact
 from ..config import Settings, get_settings
 from ..orchestration import JobState, JobStore
@@ -13,7 +22,14 @@ from ..orchestration.states import PIPELINE_ORDER, can_transition
 from ..observability.events import safe_text
 from ..observability.lifecycle import RunObserver
 from ..providers import BudgetExceededError, ProviderError, build_router
-from ..schemas import Genre, ResearchResult, Script, Storyboard, TopicCandidate
+from ..research import (
+    FetchedSource,
+    build_report,
+    check_originality,
+    fetch_sources,
+    prior_scripts_from,
+)
+from ..schemas import Genre, ResearchResult, Script, Storyboard, TopicCandidate, VerificationStatus
 
 DEFAULT_GENRES = list(Genre)
 
@@ -121,6 +137,67 @@ class PipelineRunner:
         self.store.write_artifact(job_id, "review.json", {
             "review": review.model_dump(mode="json"), "script": revised.model_dump(mode="json")})
         self.store.write_artifact(job_id, "script.json", revised.model_dump(mode="json"))
+        self._evidence(job_id, revised)
+
+    def _evidence(self, job_id: str, script: Script) -> None:
+        """Read the cited sources, verify the script's claims, and check originality.
+
+        Fixture runs never touch the network, so retrieval is recorded as skipped
+        rather than pretending a page was read, and the originality gate is only
+        enforced against real production history because fixture scripts are
+        identical by design. In live mode both are enforced and fail the job.
+        """
+        note = ""
+        if script.content_type != "factual":
+            verification: dict[str, Any] = {
+                "status": VerificationStatus.fictional.value,
+                "retrieval": "not_applicable",
+                "note": "fictional script carries no claim to verify",
+            }
+        else:
+            retrieval = "skipped_mock" if self.force_mock else "live"
+            sources: list[FetchedSource] = [] if retrieval == "skipped_mock" else fetch_sources(
+                [s.url for s in script.sources if s.url]
+            )
+            try:
+                claims = ClaimExtractorAgent(self.router).run(script)
+            except (ProviderError, ValueError, OSError, RuntimeError) as exc:
+                claims = []
+                note = f"claim extraction unavailable: {type(exc).__name__}"
+            report = build_report(claims, sources)
+            verification = {
+                "status": report.status.value,
+                "retrieval": retrieval,
+                "checks": [check.as_dict() for check in report.checks],
+                "sources": [source.as_dict() for source in sources],
+                "retrieved": report.retrieved,
+                "note": note,
+            }
+        self.store.write_artifact(job_id, "verification.json", verification)
+
+        if script.content_type == "factual":
+            status = VerificationStatus(verification["status"])
+            if status is not script.verification_status:
+                script = script.model_copy(update={"verification_status": status})
+                self.store.write_artifact(job_id, "script.json", script.model_dump(mode="json"))
+
+        originality = check_originality(
+            script.full_text,
+            prior_scripts_from(self.store, exclude_job_id=job_id),
+            enforced=not self.force_mock,
+        )
+        self.store.write_artifact(job_id, "originality.json", {
+            "verdict": originality.verdict,
+            "max_similarity": originality.max_similarity,
+            "nearest_job_id": originality.nearest_job_id,
+            "nearest_title": originality.nearest_title,
+            "compared": originality.compared,
+            "threshold": originality.threshold,
+            "enforced": originality.enforced,
+            "note": originality.note,
+        })
+        if originality.too_similar and originality.enforced:
+            raise ValueError(f"originality check failed: {originality.note}")
 
     def _storyboard(self, job_id: str) -> None:
         p = self.settings.production

@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "verdict": {
+      "enum": [
+        "original",
+        "too_similar"
+      ],
+      "title": "Verdict",
+      "type": "string"
+    },
+    "max_similarity": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Max Similarity",
+      "type": "number"
+    },
+    "nearest_job_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Nearest Job Id"
+    },
+    "nearest_title": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Nearest Title"
+    },
+    "compared": {
+      "minimum": 0,
+      "title": "Compared",
+      "type": "integer"
+    },
+    "threshold": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Threshold",
+      "type": "number"
+    },
+    "enforced": {
+      "title": "Enforced",
+      "type": "boolean"
+    },
+    "note": {
+      "default": "",
+      "title": "Note",
+      "type": "string"
+    }
+  },
+  "required": [
+    "verdict",
+    "max_similarity",
+    "compared",
+    "threshold",
+    "enforced"
+  ],
+  "title": "OriginalityArtifact",
+  "type": "object"
+}

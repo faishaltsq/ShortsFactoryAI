@@ -151,3 +151,21 @@ def quality_user(storyboard: Storyboard, script_json: str) -> str:
 
 def metadata_user(script_json: str) -> str:
     return f"Naskah:\n{script_json}\nBuat metadata. Balas JSON saja."
+
+
+CLAIM_SYSTEM = """\
+Kamu adalah ClaimExtractorAgent. Tugasmu HANYA mengekstrak klaim fakta dari naskah.
+Aturan:
+- Klaim = pernyataan yang bisa diverifikasi terhadap sumber (angka, tanggal, nama, riset).
+- Kutipan harus berupa potongan teks yang benar-benar ada di naskah atau sumber.
+- source_url harus diambil persis dari field sources naskah; jangan mengarang URL.
+- Naskah fiksi atau opini: kembalikan daftar kosong.
+- Jangan menambahkan penjelasan. Balas HANYA JSON:
+{"claims":[{"statement":"...","quote":"...","source_url":"..."}]}
+"""
+
+def claim_user(script_json: str) -> str:
+    return (
+        f"Naskah beserta sumbernya:\n{script_json}\n"
+        "Ekstrak klaim fakta beserta kutipan buktinya. Balas JSON saja."
+    )

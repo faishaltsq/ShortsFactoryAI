@@ -55,6 +55,9 @@ FIXTURES: dict[str, str] = {
             "genre": "science",
         }
     ),
+    # Fixture runs carry no real fetched page, so claims are extracted as an
+    # empty list: the pipeline records needs_review instead of inventing proof.
+    "claim_extraction": json.dumps({"claims": []}),
     "script": json.dumps(
         {
             "title": "Cahaya yang Kau Lihat Adalah Masa Lalu",
