@@ -173,19 +173,68 @@ _demo_script["segments"] = [
 _demo_script["verification_status"] = "needs_review"
 FIXTURES["script"] = json.dumps(_demo_script)
 FIXTURES["creative_review"] = json.dumps({"verdict": "approve", "weak_spots": [], "revisions": [], "notes": "Demo fixture, not a live editorial review."})
+_DEMO_ILLUSTRATIONS = [
+    {
+        "title": "Cahaya dari Masa Lalu",
+        "caption": "Setiap tatapan ke langit adalah masa lalu",
+        "setting": "space",
+        "timeOfDay": "night",
+        "actors": [{"pose": "point", "x": 0.32, "ground": 0.76, "scale": 1.0, "tone": "accent"}],
+        "props": [{"kind": "sun", "x": 0.74, "y": 0.24, "scale": 1.3},
+                  {"kind": "planet", "x": 0.16, "y": 0.18, "scale": 0.7}],
+        "fx": ["lightRays", "dust", "vignette"],
+        "shots": [{"framing": "wide", "camera": "pushIn", "weight": 1.1},
+                  {"framing": "close", "camera": "handheld", "weight": 1.0}],
+    },
+    {
+        "title": "149,6 Juta Kilometer",
+        "caption": "Cahaya menempuhnya dalam 8 menit 20 detik",
+        "setting": "space",
+        "timeOfDay": "night",
+        "actors": [],
+        "props": [{"kind": "sun", "x": 0.2, "y": 0.3, "scale": 1.1},
+                  {"kind": "planet", "x": 0.8, "y": 0.42, "scale": 0.9}],
+        "fx": ["dust", "stars"],
+        "shots": [{"framing": "wide", "camera": "panRight", "weight": 1.2},
+                  {"framing": "medium", "camera": "pushIn", "weight": 0.9}],
+    },
+    {
+        "title": "Perjalanan yang Selalu Terlambat",
+        "caption": "Yang terlihat sudah terjadi",
+        "setting": "desert",
+        "timeOfDay": "dusk",
+        "actors": [{"pose": "lookUp", "x": 0.5, "ground": 0.86, "scale": 1.15, "silhouette": True}],
+        "props": [{"kind": "sun", "x": 0.5, "y": 0.34, "scale": 1.5}],
+        "fx": ["lightRays", "vignette"],
+        "shots": [{"framing": "medium", "camera": "tiltUp", "weight": 1.0},
+                  {"framing": "close", "camera": "static", "weight": 0.8}],
+    },
+    {
+        "title": "1,3 Detik dari Bulan",
+        "caption": "Alam semesta adalah kumpulan pesan lama",
+        "setting": "ocean",
+        "timeOfDay": "night",
+        "actors": [{"pose": "stand", "x": 0.66, "ground": 0.88, "scale": 1.05, "tone": "secondary"}],
+        "props": [{"kind": "moon", "x": 0.5, "y": 0.2, "scale": 1.4}],
+        "fx": ["stars", "vignette"],
+        "shots": [{"framing": "wide", "camera": "pullOut", "weight": 1.2},
+                  {"framing": "close", "camera": "handheld", "weight": 1.0}],
+    },
+]
+
 _demo_scenes = []
 for _i, _segment in enumerate(_demo_script["segments"]):
     _demo_scenes.append({
         "sceneId": f"scene-{_i + 1:02d}",
-        "template": "KineticTypography" if _i in (0, 3) else "EducationalExplainer",
-        "segment": _segment["text"], "assetRefs": [],
-        "text": [{"id": f"title-{_i}", "text": ["Cahaya dari Masa Lalu", "Matahari ke Bumi", "Melihat Masa Lalu", "1,3 Detik dari Bulan"][_i],
-                  "style": {"role": "title"}}],
+        "template": "IllustratedStory",
+        "segment": _segment["text"],
+        "assetRefs": [],
+        "text": [{"id": f"title-{_i}", "text": _DEMO_ILLUSTRATIONS[_i]["title"], "style": {"role": "title"}}],
         "animation": {"preset": "slideUp", "durationInFrames": 22},
         "transition": {"type": "fade", "durationInFrames": 8},
-        "startFrame": _i * 270, "durationInFrames": 270,
-        "data": {"bullets": [["Cahaya tidak tiba seketika"], ["Jarak rata-rata: 149,6 juta km", "Kecepatan: sekitar 300.000 km/detik"],
-                              ["Perjalanan cahaya memerlukan waktu", "Yang terlihat sudah terjadi"], ["Bulan: sekitar 1,3 detik"]][_i]},
+        "startFrame": _i * 270,
+        "durationInFrames": 270,
+        "data": _DEMO_ILLUSTRATIONS[_i],
     })
 FIXTURES["storyboard"] = json.dumps({"storyboard": {"id": "sb-demo", "fps": 30, "width": 1080, "height": 1920,
                                                    "language": "id-ID", "theme": {"id": "midnight"}, "scenes": _demo_scenes}})
