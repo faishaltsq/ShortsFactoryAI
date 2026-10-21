@@ -111,3 +111,27 @@ def test_seconds_to_ms_subtitle_cues():
     cues = Storyboard.model_validate(normalized).subtitles
     assert cues[0].startMs == 500
     assert cues[0].endMs == 2000
+
+
+def test_illustrated_template_and_lifted_data():
+    payload = {"scenes": [{
+        "id": "s1", "visual": "Illustrated Scene", "segment": "Cahaya tertunda.",
+        "setting": "space", "timeOfDay": "night",
+        "actors": [{"pose": "Pointing", "x": 0.3, "ground": 0.74}],
+        "props": [{"kind": "Sun", "x": 0.7, "y": 0.25}],
+        "shots": [{"framing": "Wide", "camera": "push in"}],
+    }]}
+    scene = normalize_storyboard(payload, fallback_id="j")["scenes"][0]
+    assert scene["template"] == "IllustratedStory"
+    assert scene["data"]["setting"] == "space"
+    assert scene["data"]["actors"][0]["pose"] == "point"
+    assert scene["data"]["props"][0]["kind"] == "sun"
+    assert scene["data"]["shots"][0] == {"framing": "wide", "camera": "pushIn", "weight": 1.0}
+    Storyboard.model_validate(normalize_storyboard(payload, fallback_id="j"))
+
+
+def test_unknown_illustration_key_is_dropped_not_fatal():
+    payload = {"scenes": [{"visual": "illustration", "segment": "x", "setting": "city", "mood": "tense"}]}
+    scene = normalize_storyboard(payload, fallback_id="j")["scenes"][0]
+    assert "mood" not in scene["data"]
+

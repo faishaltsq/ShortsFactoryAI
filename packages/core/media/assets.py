@@ -41,6 +41,11 @@ def referenced_assets(storyboard: Storyboard) -> dict[str, str]:
                     if entry["assetRef"] not in scene.assetRefs:
                         raise ValueError("template image assetRef must also appear in scene.assetRefs")
                     add(entry["assetRef"], "image")
+        image_ref = (scene.data or {}).get("imageRef")
+        if image_ref:
+            if image_ref not in scene.assetRefs:
+                raise ValueError("illustration imageRef must also appear in scene.assetRefs")
+            add(image_ref, "image")
         if scene.audio:
             from .scene_data import SceneAudioSpec
             effects = SceneAudioSpec.model_validate(scene.audio)
@@ -178,4 +183,6 @@ def render_storyboard(storyboard: Storyboard, manifest: AssetManifest) -> dict:
             for item in (scene.get("data") or {}).get(key, []):
                 if item.get("assetRef"):
                     item["assetRef"] = paths[item["assetRef"]]
+        if (scene.get("data") or {}).get("imageRef"):
+            scene["data"]["imageRef"] = paths[scene["data"]["imageRef"]]
     return props

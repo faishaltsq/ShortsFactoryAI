@@ -15,6 +15,8 @@ from typing import Any
 WORD_PER_SEC = 2.6
 
 _TEMPLATE_KEYWORDS = [
+    ("illustrat", "IllustratedStory"),
+    ("drawing", "IllustratedStory"),
     ("kinetic", "KineticTypography"),
     ("comic", "MotionComic"),
     ("infographicmotion", "InfographicMotion"),
@@ -49,6 +51,61 @@ _TRANSITION_ALIASES = {
     "slideup": "slideUp", "slide": "slideUp",
     "wipe": "wipe", "wipeleft": "wipe", "wiperight": "wipe",
     "zoom": "zoom", "punch": "zoom", "scale": "zoom",
+}
+
+_SETTING_ALIASES = {
+    "space": "space", "galaxy": "space", "sky": "space", "cosmos": "space", "universe": "space",
+    "desert": "desert", "dune": "desert", "sand": "desert",
+    "city": "city", "urban": "city", "street": "city", "building": "city",
+    "ocean": "ocean", "sea": "ocean", "water": "ocean", "beach": "ocean",
+    "forest": "forest", "jungle": "forest", "tree": "forest", "nature": "forest",
+    "interior": "interior", "room": "interior", "indoor": "interior", "house": "interior",
+    "abstract": "abstract", "pattern": "abstract", "minimal": "abstract",
+}
+_POSE_ALIASES = {
+    "stand": "stand", "idle": "stand", "default": "stand",
+    "point": "point", "pointing": "point", "gesture": "point",
+    "reach": "reach", "reaching": "reach", "lift": "reach",
+    "walk": "walk", "walking": "walk", "run": "walk",
+    "lookup": "lookUp", "look_up": "lookUp", "gaze": "lookUp", "sky": "lookUp",
+    "shrug": "shrug", "confused": "shrug", "ask": "shrug",
+    "sit": "sit", "sitting": "sit", "kneel": "sit",
+}
+_PROP_ALIASES = {
+    "sun": "sun", "sunlight": "sun", "star_sun": "sun",
+    "moon": "moon", "lunar": "moon",
+    "planet": "planet", "earth": "planet", "globe": "planet",
+    "star": "star", "spark": "star",
+    "cloud": "cloud", "sky_cloud": "cloud",
+    "mountain": "mountain", "hill": "mountain", "ridge": "mountain",
+    "tree": "tree", "plant": "tree", "forest_tree": "tree",
+    "tower": "tower", "building": "tower", "skyscraper": "tower",
+    "gear": "gear", "cog": "gear", "machine": "gear",
+    "book": "book", "document": "book", "paper": "book",
+    "wave": "wave", "water_wave": "wave", "sea": "wave",
+    "clock": "clock", "time": "clock", "watch": "clock",
+    "bulb": "bulb", "idea": "bulb", "lamp": "bulb", "light": "bulb",
+    "arrow": "arrow", "direction": "arrow", "pointer": "arrow",
+}
+_FRAMING_ALIASES = {"wide": "wide", "establishing": "wide", "far": "wide",
+                    "medium": "medium", "mid": "medium", "normal": "medium",
+                    "close": "close", "closeup": "close", "tight": "close", "detail": "close"}
+_CAMERA_ALIASES = {
+    "static": "static", "none": "static", "locked": "static",
+    "pushin": "pushIn", "push_in": "pushIn", "zoom_in": "pushIn", "zoom": "pushIn",
+    "pullout": "pullOut", "pull_out": "pullOut", "zoom_out": "pullOut",
+    "panleft": "panLeft", "pan_left": "panLeft", "left": "panLeft",
+    "panright": "panRight", "pan_right": "panRight", "right": "panRight",
+    "tiltup": "tiltUp", "tilt_up": "tiltUp", "up": "tiltUp",
+    "handheld": "handheld", "shake": "handheld", "organic": "handheld",
+}
+_FX_ALIASES = {
+    "lightrays": "lightRays", "light_rays": "lightRays", "rays": "lightRays", "sunbeam": "lightRays",
+    "dust": "dust", "particles": "dust", "motes": "dust",
+    "stars": "stars", "starry": "stars",
+    "speedlines": "speedLines", "speed_lines": "speedLines", "motion": "speedLines",
+    "impact": "impact", "burst": "impact", "shock": "impact",
+    "vignette": "vignette", "dark_edges": "vignette",
 }
 
 
@@ -123,6 +180,95 @@ def normalize_transition(raw: Any) -> dict[str, Any]:
         or "fade"
     )
     return {"type": resolved, "durationInFrames": max(1, min(duration or 10, 60))}
+
+
+_ILLUSTRATION_KEYS = ("setting", "timeOfDay", "imageRef", "actors", "props", "fx", "shots", "caption")
+_PROP_KINDS = ("sun", "moon", "planet", "star", "cloud", "mountain", "tree",
+               "tower", "gear", "book", "wave", "clock", "bulb", "arrow")
+_FX_VALUES = ("lightRays", "dust", "stars", "speedLines", "impact", "vignette")
+
+
+def _alias(table: dict[str, str], raw: Any, default: str) -> str:
+    key = str(raw or "").strip().lower()
+    if key in table:
+        return table[key]
+    squeezed = re.sub(r"[^a-z_]", "", key)
+    return table.get(squeezed, default)
+
+
+def _clamp(value: Any, low: float, high: float, default: float) -> float:
+    number = _float(value)
+    return default if number is None else max(low, min(number, high))
+
+
+def normalize_illustration(raw: dict[str, Any]) -> dict[str, Any]:
+    """Whitelist and clamp the illustration payload; never pass unknown keys through."""
+    out: dict[str, Any] = {
+        "setting": _alias(_SETTING_ALIASES, raw.get("setting") or raw.get("environment"), "abstract"),
+    }
+    if raw.get("title"):
+        out["title"] = str(raw["title"])[:70]
+    if raw.get("caption"):
+        out["caption"] = str(raw["caption"])[:90]
+    if raw.get("timeOfDay"):
+        out["timeOfDay"] = _alias(
+            {"dawn": "dawn", "sunrise": "dawn", "morning": "dawn", "day": "day", "noon": "day",
+             "dusk": "dusk", "sunset": "dusk", "evening": "dusk", "night": "night", "dark": "night"},
+            raw.get("timeOfDay"), "night",
+        )
+    if raw.get("imageRef"):
+        out["imageRef"] = str(raw["imageRef"])[:200]
+
+    actors = raw.get("actors") or raw.get("characters") or []
+    out["actors"] = [
+        {
+            "pose": _alias(_POSE_ALIASES, (a or {}).get("pose") or (a or {}).get("action"), "stand"),
+            "x": _clamp((a or {}).get("x"), 0, 1, 0.5),
+            "ground": _clamp((a or {}).get("ground") or (a or {}).get("y"), 0, 1, 0.72),
+            "scale": _clamp((a or {}).get("scale"), 0.4, 1.8, 1.0),
+            "facing": "left" if str((a or {}).get("facing", "right")).lower().startswith("l") else "right",
+            "tone": _alias({"primary": "primary", "secondary": "secondary", "accent": "accent"},
+                           (a or {}).get("tone"), "primary"),
+            "silhouette": bool((a or {}).get("silhouette")),
+        }
+        for a in actors[:3] if isinstance(a, dict)
+    ]
+
+    props = raw.get("props") or raw.get("objects") or []
+    normalised_props = []
+    for p in props[:5]:
+        if not isinstance(p, dict):
+            continue
+        kind = _alias(_PROP_ALIASES, p.get("kind") or p.get("type"), "")
+        if kind not in _PROP_KINDS:
+            continue
+        normalised_props.append({
+            "kind": kind,
+            "x": _clamp(p.get("x"), 0, 1, 0.5),
+            "y": _clamp(p.get("y"), 0, 1, 0.35),
+            "scale": _clamp(p.get("scale"), 0.4, 2.0, 1.0),
+        })
+    out["props"] = normalised_props
+
+    effects = []
+    for item in (raw.get("fx") or raw.get("effects") or [])[:4]:
+        value = _alias(_FX_ALIASES, item, "")
+        if value in _FX_VALUES and value not in effects:
+            effects.append(value)
+    out["fx"] = effects
+
+    shots = raw.get("shots") or []
+    normalised_shots = []
+    for s in shots[:4]:
+        if not isinstance(s, dict):
+            continue
+        normalised_shots.append({
+            "framing": _alias(_FRAMING_ALIASES, s.get("framing") or s.get("shot"), "wide"),
+            "camera": _alias(_CAMERA_ALIASES, s.get("camera") or s.get("move"), "pushIn"),
+            "weight": _clamp(s.get("weight"), 0.5, 3.0, 1.0),
+        })
+    out["shots"] = normalised_shots or [{"framing": "wide", "camera": "pushIn", "weight": 1.0}]
+    return out
 
 
 def _normalize_text_element(raw: Any, index: int, scene_id: str) -> dict[str, Any]:
@@ -207,7 +353,13 @@ def _normalize_scene(raw: Any, index: int, fps: int) -> dict[str, Any]:
     if isinstance(audio, dict):
         scene["audio"] = audio
     data = raw.get("data")
-    if isinstance(data, dict):
+    if scene["template"] == "IllustratedStory":
+        merged = dict(data) if isinstance(data, dict) else {}
+        for key in _ILLUSTRATION_KEYS:
+            if key not in merged and key in raw:
+                merged[key] = raw[key]
+        scene["data"] = normalize_illustration(merged)
+    elif isinstance(data, dict):
         scene["data"] = data
     return scene
 
