@@ -14,8 +14,20 @@ export const Effects: React.FC<{list: Effect[]; palette: ArtPalette; frame: numb
 }) => (
   <>
     <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid slice" style={{position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none'}} aria-hidden="true">
+      <defs>
+        <linearGradient id="ray-fade" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#ffffff" stopOpacity={0.95} />
+          <stop offset="55%" stopColor="#ffffff" stopOpacity={0.45} />
+          <stop offset="100%" stopColor="#ffffff" stopOpacity={0} />
+        </linearGradient>
+        <mask id="ray-fade-mask">
+          <rect x={0} y={0} width={W} height={H} fill="url(#ray-fade)" />
+        </mask>
+      </defs>
       {list.includes('lightRays') ? (
-        <g opacity={0.22}>
+        // Feathered with a gradient mask: hard polygons read as cardboard cut-outs
+        // rather than light falling through atmosphere.
+        <g opacity={0.2} mask="url(#ray-fade-mask)">
           {Array.from({length: 5}, (_, i) => (
             <polygon
               key={i}

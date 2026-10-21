@@ -41,7 +41,7 @@ export interface ArtPalette {
   ink: string;
 }
 
-const LIGHT: Record<TimeOfDay, number> = {dawn: 0.42, day: 0.72, dusk: 0.3, night: 0};
+const LIGHT: Record<TimeOfDay, number> = {dawn: 0.5, day: 0.8, dusk: 0.42, night: 0};
 
 /** All art colours are derived from the theme; only black/white are mixed in. */
 export const paletteFor = (theme: ThemeSpec, timeOfDay: TimeOfDay = 'night'): ArtPalette => {
@@ -49,8 +49,9 @@ export const paletteFor = (theme: ThemeSpec, timeOfDay: TimeOfDay = 'night'): Ar
   return {
     skyTop: mix(shade(theme.background, 0.35), theme.backgroundAccent, 0.55),
     skyBottom: mix(theme.backgroundAccent, theme.accent, light * 0.55),
-    ground: mix(theme.background, theme.secondary, 0.18),
-    groundFar: mix(theme.backgroundAccent, theme.secondary, 0.34),
+    // Ground responds to time of day too: a dusk desert must not read as midnight.
+    ground: mix(mix(theme.background, theme.secondary, 0.18), theme.secondary, light * 0.34),
+    groundFar: mix(mix(theme.backgroundAccent, theme.secondary, 0.34), theme.accent, light * 0.18),
     figure: theme.primary,
     figureAccent: theme.accent,
     prop: mix(theme.secondary, theme.primary, 0.4),
