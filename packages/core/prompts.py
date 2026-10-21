@@ -151,3 +151,15 @@ def quality_user(storyboard: Storyboard, script_json: str) -> str:
 
 def metadata_user(script_json: str) -> str:
     return f"Naskah:\n{script_json}\nBuat metadata. Balas JSON saja."
+
+
+#: Prompt sistem bawaan per agent — satu sumber kebenaran untuk pipeline dan API.
+DEFAULT_SYSTEM: dict[str, str] = {
+    "ResearchAgent": RESEARCH_SYSTEM,
+    "TopicSelectionAgent": TOPIC_SYSTEM,
+    "ScriptAgent": SCRIPT_SYSTEM,
+    "CreativeDirectorAgent": CREATIVE_SYSTEM,
+    "StoryboardAgent": STORYBOARD_SYSTEM,
+    "QualityAgent": QUALITY_SYSTEM,
+    "MetadataAgent": METADATA_SYSTEM,
+}
