@@ -64,7 +64,12 @@ export const Figure: React.FC<{
   palette: ArtPalette;
   frame: number;
   index: number;
-}> = ({actor, palette, frame, index}) => {
+  /**
+   * 'frame' (default) places the figure in 1080x1920 stage coordinates, which is what
+   * Stage needs. 'box' places it relative to its parent, for embedding in a panel.
+   */
+  fit?: 'frame' | 'box';
+}> = ({actor, palette, frame, index, fit = 'frame'}) => {
   const {fps} = useVideoConfig();
   const pose = POSES[actor.pose] ?? POSES.stand;
   const walk = actor.pose === 'walk' ? Math.sin(frame / 5.4) * 24 : 0;
@@ -85,17 +90,18 @@ export const Figure: React.FC<{
   const blink = (frame + index * 37) % 97 < 4;
   const heightPx = 0.52 * 1920 * actor.scale;
   const widthPx = (heightPx * 200) / 430;
+  const placement =
+    fit === 'box'
+      ? {left: `${actor.x * 100}%`, top: `${actor.ground * 100}%`, width: '100%', height: '100%', transform: 'translate(-50%, -100%)'}
+      : {left: actor.x * 1080 - widthPx / 2, top: actor.ground * 1920 - heightPx, width: widthPx, height: heightPx};
 
   return (
     <div
       style={{
         position: 'absolute',
-        left: actor.x * 1080 - widthPx / 2,
-        top: actor.ground * 1920 - heightPx,
-        width: widthPx,
-        height: heightPx,
+        ...placement,
         opacity: opacity * enter,
-        transform: `translateY(${(1 - enter) * 40}px) rotate(${sway}deg) scaleX(${actor.facing === 'left' ? -1 : 1})`,
+        transform: `${placement.transform ?? ''} translateY(${(1 - enter) * 40}px) rotate(${sway}deg) scaleX(${actor.facing === 'left' ? -1 : 1})`,
         transformOrigin: '50% 100%',
       }}
     >

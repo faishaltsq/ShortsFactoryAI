@@ -115,20 +115,31 @@ const Shape: React.FC<{kind: IllustrationProp['kind']; palette: ArtPalette}> = (
   }
 };
 
-export const Prop: React.FC<{prop: IllustrationProp; palette: ArtPalette; frame: number; index: number}> = ({
+export const Prop: React.FC<{
+  prop: IllustrationProp;
+  palette: ArtPalette;
+  frame: number;
+  index: number;
+  /** 'frame' uses 1080x1920 stage coordinates (Stage); 'box' uses its parent (panels, layers). */
+  fit?: 'frame' | 'box';
+}> = ({
   prop,
   palette,
   frame,
   index,
+  fit = 'frame',
 }) => {
   const size = 150 * prop.scale;
   const float = Math.sin(frame / 34 + index * 1.7) * 6 * prop.scale;
+  const placement =
+    fit === 'box'
+      ? {left: `${prop.x * 100}%`, top: `${prop.y * 100}%`, transform: 'translate(-50%, -50%)'}
+      : {left: prop.x * 1080 - size / 2, top: prop.y * 1920 - size / 2 + float};
   return (
     <div
       style={{
         position: 'absolute',
-        left: prop.x * 1080 - size / 2,
-        top: prop.y * 1920 - size / 2 + float,
+        ...placement,
         width: size,
         height: size,
       }}
