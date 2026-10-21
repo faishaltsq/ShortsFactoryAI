@@ -25,3 +25,9 @@ tsconfig.tsbuildinfo
 .pytest_cache/
 .ruff_cache/
 packages/video/public/jobs/
+
+# Pixel Studio runtime config (operator-authored, no secrets).
+# studio-history/ sengaja TIDAK diabaikan: snapshot prompt yang sudah dikurasi
+# operator adalah catatan perubahan, bukan state sementara.
+config/studio.json
+config/studio.json.tmp
