@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { api, ApiError, type JobDetail } from "@/lib/api";
+import { api, ApiError, type JobDetail, type StudioResponse } from "@/lib/api";
 import { ErrorState, StateChip } from "@/components/states";
+import { agentStatus, roster } from "@/lib/team";
+import { PixelAvatar } from "@/components/pixel/PixelAvatar";
 
 const PIPELINE = [
   "IDEA_DISCOVERY",
@@ -29,6 +31,7 @@ export default function JobDetailPage() {
   const [cancelling, setCancelling] = useState(false);
   const [mode, setMode] = useState("mock");
   const [stop, setStop] = useState("storyboard");
+  const [meta, setMeta] = useState<StudioResponse | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -42,6 +45,22 @@ export default function JobDetailPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Roster hanya identitas tampilan; kalau gagal, data job tetap terbaca.
+  useEffect(() => {
+    let alive = true;
+    api
+      .getStudio()
+      .then((value) => {
+        if (alive) setMeta(value);
+      })
+      .catch(() => {
+        if (alive) setMeta(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const isRunning = Boolean(data?.run.running);
   useEffect(() => {
@@ -82,7 +101,7 @@ export default function JobDetailPage() {
     }
   };
 
-  if (error && !data) return <ErrorState title="Job tidak bisa dimuat" message={error} onRetry={load} />;
+  if (error && !data) return <ErrorState title="Job tidak bisa dimuat" message={error} onRetry={() => void load()} />;
   if (!data)
     return (
       <p className="text-sm text-zinc-500" role="status">
@@ -90,10 +109,10 @@ export default function JobDetailPage() {
       </p>
     );
 
-  const current = PIPELINE.indexOf(data.record.state);
+  const observed = new Set([data.record.state, ...data.events.map((event) => event.to_state)]);
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-end justify-between gap-4">
+      <header className="px-page-header">
         <div>
           <Link href="/jobs" className="text-xs text-zinc-500 hover:text-zinc-300">
             ← Semua job
@@ -103,7 +122,7 @@ export default function JobDetailPage() {
             <StateChip state={data.record.state} />
             <span>id {data.record.id}</span>
             <span>mode {String(data.record.payload.provider_mode ?? mode)}</span>
-            {isRunning && <span className="animate-pulse text-amber-400">berjalan…</span>}
+            {isRunning && <span className="text-amber-400">berjalan…</span>}
           </p>
           {data.record.last_error && (
             <p className="mt-2 max-w-3xl rounded-md border border-rose-900 bg-rose-950/40 px-3 py-2 text-sm text-rose-200">
@@ -111,7 +130,7 @@ export default function JobDetailPage() {
             </p>
           )}
         </div>
-        <div className="flex items-end gap-2">
+        <div className="flex flex-wrap items-end gap-2">
           <label className="block space-y-1">
             <span className="text-xs text-zinc-500">Mode</span>
             <select
@@ -140,7 +159,8 @@ export default function JobDetailPage() {
           <button
             onClick={() => void startRun()}
             disabled={starting || isRunning}
-            className="rounded-md bg-sky-500 px-4 py-2 text-sm font-medium text-white hover:bg-sky-400 disabled:bg-zinc-700 disabled:text-zinc-400"
+            className="px-button"
+            data-primary="true"
           >
             {starting || isRunning ? "Berjalan…" : "Jalankan / lanjutkan"}
           </button>
@@ -148,7 +168,7 @@ export default function JobDetailPage() {
             <button
               onClick={() => void cancelRun()}
               disabled={cancelling}
-              className="rounded-md border border-rose-700 px-4 py-2 text-sm text-rose-300 hover:bg-rose-950 disabled:opacity-50"
+              className="px-button border-rose-700 text-rose-300"
             >
               {cancelling ? "Membatalkan…" : "Batalkan run"}
             </button>
@@ -158,32 +178,59 @@ export default function JobDetailPage() {
 
       {data.run.error && <ErrorState title="Run terakhir gagal" message={data.run.error} onRetry={() => void startRun()} />}
 
-      <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6">
+      {error && (
+        <div className="px-stale" role="status">
+          <p>{error}</p>
+          <button className="px-button" onClick={() => void load()}>
+            Coba lagi aktivitas
+          </button>
+        </div>
+      )}
+
+      <section className="px-frame" aria-label="Tim pada job ini" data-motion="paused">
+        <h2 className="mb-4 text-lg font-medium">Tim pada job ini</h2>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {roster(meta).map((member) => {
+            const state = agentStatus(member.id, data, Boolean(error), member.available);
+            return (
+              <div key={member.id} className="flex min-w-0 items-center gap-3">
+                <PixelAvatar member={member} kind={state.kind} size={48} />
+                <div className="min-w-0">
+                  <p className="font-semibold">{member.persona}</p>
+                  <p className="text-xs text-zinc-400">{member.role}</p>
+                  <span className="px-status" data-kind={state.kind}>
+                    {state.label}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+          {!meta && (
+            <p className="text-sm text-zinc-400">
+              Profil tim belum tersedia; data job tetap dapat dibaca.
+            </p>
+          )}
+        </div>
+      </section>
+
+      <section className="px-frame">
         <h2 className="mb-4 text-lg font-medium">Tahap pipeline</h2>
-        <ol className="flex flex-wrap gap-2">
-          {PIPELINE.map((stage, index) => {
-            const done = current > -1 && index < current;
+        <ol className="px-timeline" aria-label="Tahap tersimpan">
+          {PIPELINE.map((stage) => {
             const now = stage === data.record.state;
             return (
-              <li
-                key={stage}
-                className={`rounded-md border px-3 py-1.5 text-xs ${
-                  now
-                    ? "border-sky-600 bg-sky-950 text-sky-200"
-                    : done
-                      ? "border-emerald-800 bg-emerald-950/60 text-emerald-300"
-                      : "border-zinc-800 text-zinc-500"
-                }`}
-              >
-                {done ? "✓ " : ""}
-                {stage}
+              <li key={stage} data-current={now} aria-current={now ? "step" : undefined}>
+                <span className="px-chip">{stage}</span>
+                <span className="text-xs text-zinc-400">
+                  {now ? "State tersimpan" : observed.has(stage) ? "Pernah tercatat" : "Belum tercatat"}
+                </span>
               </li>
             );
           })}
         </ol>
       </section>
 
-      <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6">
+      <section className="px-frame">
         <h2 className="mb-4 text-lg font-medium">Artifact</h2>
         {data.artifacts.length === 0 && (
           <p className="text-sm text-zinc-500">Belum ada artifact. Jalankan job untuk menghasilkannya.</p>
@@ -193,6 +240,7 @@ export default function JobDetailPage() {
             <button
               key={name}
               onClick={() => void openArtifact(name)}
+              aria-pressed={artifact?.name === name}
               className="rounded-md border border-zinc-700 px-3 py-1.5 font-mono text-xs hover:bg-zinc-800"
             >
               {name}
@@ -200,16 +248,21 @@ export default function JobDetailPage() {
           ))}
         </div>
         {artifact && (
-          <pre className="mt-4 max-h-96 overflow-auto rounded-md border border-zinc-800 bg-zinc-950 p-4 text-xs text-zinc-300">
+          <pre
+            role="region"
+            aria-label="Isi artifact"
+            tabIndex={0}
+            className="mt-4 max-h-96 max-w-full overflow-auto border border-zinc-700 bg-zinc-950 p-4 text-xs text-zinc-300"
+          >
             {JSON.stringify(artifact.body, null, 2)}
           </pre>
         )}
       </section>
 
-      <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6">
+      <section className="px-frame">
         <h2 className="mb-4 text-lg font-medium">Riwayat event</h2>
         <ol className="space-y-2 text-sm">
-          {data.events.length === 0 && <p className="text-sm text-zinc-500">Belum ada event.</p>}
+          {data.events.length === 0 && <li className="text-sm text-zinc-400">Belum ada event.</li>}
           {data.events.map((event, index) => (
             <li key={index} className="flex flex-wrap gap-3 border-b border-zinc-900 pb-2 text-zinc-300">
               <span className="w-44 shrink-0 text-xs text-zinc-500">{event.created_at}</span>

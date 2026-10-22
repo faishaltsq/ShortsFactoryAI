@@ -14,7 +14,7 @@ it("labels the prompt even after an override and exposes its error", () => {
       error="Too long"
     />,
   );
-  const input = screen.getByRole("textbox", { name: "System prompt", exact: true });
+  const input = screen.getByRole("textbox", { name: /^System prompt$/ });
   expect(input.getAttribute("aria-invalid")).toBe("true");
   fireEvent.change(input, { target: { value: "new" } });
   expect(change).toHaveBeenCalledWith("new");

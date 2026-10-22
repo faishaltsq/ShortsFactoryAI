@@ -30,8 +30,9 @@ export default function ProvidersPage() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-end justify-between gap-4">
+      <header className="px-page-header">
         <div>
+          <p className="px-eyebrow">RUANG MESIN</p>
           <h1 className="text-2xl font-semibold tracking-tight">Providers</h1>
           <p className="text-sm text-zinc-400">
             Kesehatan model worker dan strategist. Provider yang tidak sehat otomatis dilewati router.
@@ -40,13 +41,13 @@ export default function ProvidersPage() {
         <button
           onClick={() => void load()}
           disabled={loading}
-          className="rounded-md border border-zinc-700 px-4 py-2 text-sm hover:bg-zinc-800 disabled:opacity-50"
+          className="px-button"
         >
           {loading ? "Memeriksa…" : "Periksa ulang"}
         </button>
       </header>
 
-      {error && <ErrorState title="Provider tidak bisa diperiksa" message={error} onRetry={load} />}
+      {error && <ErrorState title="Provider tidak bisa diperiksa" message={error} onRetry={() => void load()} />}
 
       {loading && !data && (
         <p className="text-sm text-zinc-500" role="status">
@@ -56,25 +57,24 @@ export default function ProvidersPage() {
 
       {data && (
         <>
-          <div className="grid gap-4 md:grid-cols-2">
+          <section className="grid gap-4 md:grid-cols-2" aria-label="Rak provider">
             {data.health.map((item) => (
               <div
                 key={item.ref}
-                className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900/40 p-5"
+                className="px-frame px-service"
               >
-                <div>
+                <div className="min-w-0 flex-1">
                   <p className="font-mono text-sm">{item.ref}</p>
                   <p className="text-xs text-zinc-500">model {item.model}</p>
                 </div>
-                <span className="flex items-center gap-2 text-xs">
-                  <span className={`h-2.5 w-2.5 rounded-full ${item.healthy ? "bg-emerald-500" : "bg-rose-500"}`} />
+                <span className="px-status" data-kind={item.healthy ? "done" : "failed"}>
                   {item.healthy ? "sehat" : "tidak sehat"}
                 </span>
               </div>
             ))}
-          </div>
+          </section>
 
-          <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6 text-sm text-zinc-300">
+          <section className="px-frame text-sm text-zinc-300">
             <h2 className="mb-2 text-lg font-medium">Mode</h2>
             <p className="text-zinc-400">Worker base URL: {String(data.mode.worker_base_url ?? "belum dikonfigurasi")}</p>
             <p className="text-zinc-400">Worker configured: {String(data.mode.worker_configured)}</p>

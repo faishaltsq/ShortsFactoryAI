@@ -1,3 +1,4 @@
+import AxeBuilder from "@axe-core/playwright";
 import { test, expect, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
@@ -68,4 +69,239 @@ test("navigation fits a phone and exposes all routes", async ({ page }) => {
   await expect(nav.getByRole("link")).toHaveCount(5);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await expect(page.getByRole("link", { name: "Lewati ke konten" })).toHaveAttribute("href", "#main-content");
+});
+
+test("every persona can be selected with keyboard and inspected", async ({ page }) => {
+  await installApi(page);
+  await page.goto("/studio");
+  const office = page.getByRole("region", { name: "Lantai studio" });
+  await expect(office.getByRole("button")).toHaveCount(Object.keys(TEAM).length);
+  const people = Object.values(TEAM);
+  await office.getByRole("button").first().focus();
+  for (const [index, person] of people.entries()) {
+    const seat = office.getByRole("button", { name: new RegExp(`^${person.persona} ·`) });
+    await expect(seat).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(seat).toHaveAttribute("aria-pressed", "true");
+    const inspector = page.getByRole("region", { name: `Profil ${person.persona}` });
+    await expect(inspector.getByRole("heading", { name: person.persona, exact: true })).toBeVisible();
+    await expect(inspector.getByText("Motto", { exact: true })).toBeVisible();
+    if (person.editable) await expect(inspector.getByRole("textbox", { name: "System prompt" })).toBeVisible();
+    else await expect(inspector.getByRole("textbox")).toHaveCount(0);
+    if (index < people.length - 1) await page.keyboard.press("Tab");
+  }
+  await expect(page.getByRole("button", { name: /publikasikan|upload|terbitkan/i })).toHaveCount(0);
+});
+
+test("drafts survive agent changes and save makes exactly one PUT", async ({ page }) => {
+  await installApi(page);
+  let puts = 0;
+  page.on("request", (r) => { if (r.method() === "PUT" && new URL(r.url()).pathname === "/api/studio") puts += 1; });
+  await page.goto("/studio");
+  const office = page.getByRole("region", { name: "Lantai studio" });
+  await office.getByRole("button", { name: /^Sora ·/ }).click();
+  await page.getByLabel(/Temperature/).fill("0.4");
+  await page.getByRole("textbox", { name: "System prompt" }).fill("Naskah uji operator");
+  await office.getByRole("button", { name: /^Raka ·/ }).click();
+  await page.getByLabel(/Temperature/).fill("0.8");
+  await office.getByRole("button", { name: /^Sora ·/ }).click();
+  await expect(page.getByLabel(/Temperature/)).toHaveValue("0.4");
+  await expect(page.getByRole("textbox", { name: "System prompt" })).toHaveValue("Naskah uji operator");
+  expect(puts).toBe(0);
+  const saved = page.waitForResponse((r) => r.request().method() === "PUT" && new URL(r.url()).pathname === "/api/studio");
+  await page.getByRole("button", { name: "Simpan perubahan" }).click();
+  const response = await saved;
+  expect(response.request().postDataJSON().agents).toMatchObject({
+    ScriptAgent: { temperature: 0.4, prompt: "Naskah uji operator" }, ResearchAgent: { temperature: 0.8 },
+  });
+  await expect(page.getByRole("button", { name: "Simpan perubahan" })).toBeDisabled();
+  expect(puts).toBe(1);
+});
+
+test("pause and reduced motion stop decoration without losing status", async ({ page }) => {
+  await installApi(page, { withJob: true });
+  await page.goto("/studio");
+  const office = page.getByRole("region", { name: "Lantai studio" });
+  const sora = office.getByRole("button", { name: /^Sora ·.*Sedang bekerja/ });
+  await expect(sora).toBeVisible();
+  await page.getByRole("button", { name: "Jeda animasi" }).click();
+  await expect(page.getByRole("button", { name: "Jeda animasi" })).toHaveAttribute("aria-pressed", "true");
+  expect(await sora.locator(".px-avatar-tool").evaluate((el) => getComputedStyle(el).animationPlayState)).toBe("paused");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  expect(await sora.locator(".px-avatar-tool").evaluate((el) => getComputedStyle(el).animationName)).toBe("none");
+  await expect(sora).toContainText("Sedang bekerja");
+});
+
+test("a restarted API never keeps an agent pretending to work", async ({ page }) => {
+  await installApi(page, { withJob: true, stale: true });
+  await page.goto("/studio");
+  const office = page.getByRole("region", { name: "Lantai studio" });
+  await expect(office.getByRole("button", { name: /^Sora ·.*Tidak terpantau/ })).toBeVisible();
+  await expect(office.locator('.px-status[data-kind="working"]')).toHaveCount(0);
+});
+
+test("network loss preserves draft and marks observed data stale", async ({ page }) => {
+  await installApi(page, { withJob: true });
+  await page.goto("/studio");
+  await page.getByRole("button", { name: /^Sora ·.*Sedang bekerja/ }).click();
+  await page.getByRole("textbox", { name: "System prompt" }).fill("Jangan hilangkan draft ini");
+  await page.route("**/api/jobs", (route) => route.fulfill({ status: 503, json: { detail: "offline fixture" } }));
+  await expect(page.getByText("Aktivitas belum bisa diperbarui. Data terakhir tetap ditampilkan.")).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "System prompt" })).toHaveValue("Jangan hilangkan draft ini");
+  await expect(page.getByRole("region", { name: "Lantai studio" }).locator('.px-status[data-kind="working"]')).toHaveCount(0);
+});
+
+test("focus job selector does not mix simultaneous jobs", async ({ page }) => {
+  await installApi(page, { withJob: true });
+  const other = structuredClone(JOB);
+  other.record.id = "e".repeat(16);
+  other.record.title = "Job kedua";
+  other.record.payload.studio_activity = { token: "f".repeat(32), agent: "AudioAgent", phase: "running", completed: {} };
+  other.run = { running: true, activity_token: "f".repeat(32) };
+  await page.route("**/api/jobs", (r) => r.fulfill({ json: { jobs: [JOB.record, other.record], states: [],
+    running: { [JOB.record.id]: true, [other.record.id]: true } } }));
+  await page.route(`**/api/jobs/${other.record.id}`, (r) => r.fulfill({ json: other }));
+  await page.goto("/studio");
+  await page.getByLabel("Pantau job terbaru").selectOption(other.record.id);
+  const office = page.getByRole("region", { name: "Lantai studio" });
+  await expect(office.getByRole("button", { name: /^Nada ·.*Sedang bekerja/ })).toBeVisible();
+  await expect(office.getByRole("button", { name: /^Sora ·.*Siap membantu/ })).toBeVisible();
+});
+
+for (const [phase, label] of [["blocked", "Terhambat"], ["failed", "Perlu diperiksa"]]) {
+  test(`failed work is static and explicit: ${phase}`, async ({ page }) => {
+    await installApi(page, { withJob: true });
+    const job = structuredClone(JOB);
+    job.run.running = false;
+    job.record.payload.studio_activity = { token: "b".repeat(32), agent: "ScriptAgent", phase, completed: {} };
+    await page.route(`**/api/jobs/${JOB.record.id}`, (r) => r.fulfill({ json: job }));
+    await page.goto("/studio");
+    const seat = page.getByRole("region", { name: "Lantai studio" }).getByRole("button", { name: new RegExp(`^Sora ·.*${label}`) });
+    await expect(seat).toBeVisible();
+    expect(await seat.locator(".px-avatar-body").evaluate((el) => getComputedStyle(el).animationName)).toBe("none");
+  });
+}
+
+test("loading and configuration failure are recoverable", async ({ page }) => {
+  await installApi(page);
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  await page.route("**/api/studio", async (route) => {
+    await gate;
+    await route.fulfill({ status: 503, json: { detail: "offline fixture" } });
+  });
+  await page.goto("/studio");
+  await expect(page.getByText("Memuat konfigurasi studio…")).toBeVisible();
+  release();
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Konfigurasi tidak bisa dimuat" }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Coba lagi", exact: true })).toBeVisible();
+});
+
+test("create and cancel retain their API payloads without real work", async ({ page }) => {
+  await installApi(page);
+  let running = true;
+  await page.route("**/api/jobs", async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    expect(route.request().postDataJSON()).toEqual({ title: "Judul baru" });
+    return route.fulfill({ status: 202, json: { job_id: JOB.record.id, mode: "mock", stop: "storyboard" } });
+  });
+  await page.route(`**/api/jobs/${JOB.record.id}`, (route) => route.fulfill({ json: {
+    ...JOB, record: { ...JOB.record, title: "Judul baru" }, run: { ...JOB.run, running },
+  } }));
+  await page.route(`**/api/jobs/${JOB.record.id}/cancel`, (route) => {
+    expect(route.request().method()).toBe("POST");
+    running = false;
+    return route.fulfill({ json: { ok: true, status: "cancellation requested" } });
+  });
+  await page.goto("/jobs");
+  await page.getByLabel("Judul video").fill("Judul baru");
+  await page.getByRole("button", { name: "Buat job", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Judul baru" })).toBeVisible();
+  await page.getByRole("button", { name: "Batalkan run", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Jalankan / lanjutkan", exact: true })).toBeEnabled();
+});
+
+for (const width of [320, 390, 768, 1024, 1440]) {
+  test(`all routes fit ${width}px and pass accessibility checks`, async ({ page }, testInfo) => {
+    test.setTimeout(120000);
+    await installApi(page, { withJob: true });
+    await page.setViewportSize({ width, height: 1000 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    const routes = ["/", "/studio", "/jobs", `/jobs/${JOB.record.id}`, "/providers", "/usage"];
+    const exceptions: string[] = [];
+    page.on("pageerror", (error) => exceptions.push(error.message));
+    for (const route of routes) {
+      await page.goto(route);
+      await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+      if (route === "/studio") {
+        await expect(page.getByRole("region", { name: "Lantai studio" }).getByRole("button")).toHaveCount(Object.keys(TEAM).length);
+        await page.getByRole("region", { name: "Lantai studio" }).getByRole("button", { name: /^Sora ·/ }).click();
+        await expect(page.getByRole("textbox", { name: "System prompt" })).toBeVisible();
+      }
+      if (route === "/usage") await expect(page.getByRole("table")).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze();
+      expect(results.violations).toEqual([]);
+      await page.screenshot({ path: testInfo.outputPath(`${route.replaceAll("/", "-") || "overview"}.png`), fullPage: true });
+    }
+    expect(exceptions).toEqual([]);
+  });
+}
+
+
+test("long job titles wrap and unknown usage agents remain visible", async ({ page }) => {
+  await installApi(page);
+  const title = "JudulSangatPanjang".repeat(30);
+  await page.route("**/api/jobs", (r) => r.fulfill({ json: {
+    jobs: [{ ...JOB.record, title }], states: [], running: {},
+  } }));
+  await page.setViewportSize({ width: 320, height: 900 });
+  await page.goto("/jobs");
+  await expect(page.getByRole("heading", { name: title })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.route("**/api/usage/today", (r) => r.fulfill({ json: {
+    tokens: 1, cost: 0, calls: 1, budget: EFFECTIVE.budget,
+    by_agent: [{ agent: "HistoricalAgent", provider: "mock", model: "fixture", tokens: 1, cost: 0, calls: 1 }],
+  } }));
+  await page.goto("/usage");
+  await expect(page.getByRole("cell", { name: "HistoricalAgent", exact: true })).toBeVisible();
+});
+
+test("overview is a lobby and retains its factual metrics", async ({ page }) => {
+  await installApi(page);
+  await page.goto("/");
+  await expect(page.getByRole("region", { name: "Lantai studio" }).getByRole("button")).toHaveCount(Object.keys(TEAM).length);
+  await expect(page.getByText("Token hari ini", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Buka Jobs", exact: true })).toBeVisible();
+});
+test("jobs is a card queue with the original detail action", async ({ page }) => {
+  await installApi(page, { withJob: true });
+  await page.goto("/jobs");
+  const queue = page.getByRole("list", { name: "Antrean produksi" });
+  await expect(queue.getByRole("heading", { name: "Cerita uji studio" })).toBeVisible();
+  await queue.getByRole("link", { name: "Buka" }).click();
+  await expect(page).toHaveURL(new RegExp(`/jobs/${JOB.record.id}$`));
+});
+
+test("detail exposes observed activity separately from persisted stages", async ({ page }) => {
+  await installApi(page, { withJob: true });
+  await page.goto(`/jobs/${JOB.record.id}`);
+  const team = page.getByRole("region", { name: "Tim pada job ini" });
+  await expect(team.getByText("Sora", { exact: true })).toBeVisible();
+  await expect(team.locator('.px-status[data-kind="working"]')).toHaveCount(2);
+  await page.getByRole("button", { name: "research.json", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Isi artifact" })).toContainText('"fixture": true');
+});
+test("providers and usage retain operational data with team attribution", async ({ page }) => {
+  await installApi(page);
+  await page.goto("/providers");
+  await expect(page.getByRole("region", { name: "Rak provider" })).toContainText("mock");
+  await expect(page.getByRole("button", { name: "Periksa ulang" })).toBeEnabled();
+  await page.getByRole("link", { name: /Usage/ }).click();
+  const ledger = page.getByRole("region", { name: "Rincian pemakaian per agent" });
+  await expect(ledger.getByText("Sora", { exact: true })).toBeVisible();
+  await expect(ledger.getByText("ScriptAgent", { exact: true })).toBeVisible();
+  await expect(ledger.getByText("fixture", { exact: true })).toBeVisible();
 });

@@ -18,8 +18,9 @@ export default function JobsPage() {
   const [creating, setCreating] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (quiet = false) => {
+    // Polling biasa tidak boleh mengosongkan kartu yang sudah tampil.
+    if (!quiet) setLoading(true);
     setError(null);
     try {
       const data = await api.listJobs(filter || undefined);
@@ -41,7 +42,7 @@ export default function JobsPage() {
   const anyRunning = Object.values(running).some(Boolean);
   useEffect(() => {
     if (!anyRunning) return;
-    const timer = setInterval(() => void load(), 2500);
+    const timer = setInterval(() => void load(true), 2500);
     return () => clearInterval(timer);
   }, [anyRunning, load]);
 
@@ -66,27 +67,29 @@ export default function JobsPage() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-end justify-between gap-4">
+      <header className="px-page-header">
         <div>
+          <p className="px-eyebrow">ANTREAN PRODUKSI</p>
           <h1 className="text-2xl font-semibold tracking-tight">Jobs</h1>
           <p className="text-sm text-zinc-400">
             Antrean produksi. Mode & stage berhenti mengikuti setelan Studio.
           </p>
         </div>
-        <div className="flex items-end gap-2">
+        <div className="px-create-job">
           <label className="block space-y-1">
             <span className="text-xs text-zinc-500">Judul video</span>
             <input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Judul minimal 3 karakter"
-              className="w-72 rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm outline-none focus:border-sky-500"
+              className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm outline-none focus:border-sky-500"
             />
           </label>
           <button
             onClick={() => void create()}
             disabled={creating}
-            className="rounded-md bg-sky-500 px-4 py-2 text-sm font-medium text-white hover:bg-sky-400 disabled:bg-zinc-700 disabled:text-zinc-400"
+            className="px-button"
+            data-primary="true"
           >
             {creating ? "Membuat…" : "Buat job"}
           </button>
@@ -94,7 +97,7 @@ export default function JobsPage() {
       </header>
 
       {notice && (
-        <p className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-300">{notice}</p>
+        <p role="status" className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-300">{notice}</p>
       )}
 
       <div className="flex flex-wrap gap-2">
@@ -111,7 +114,7 @@ export default function JobsPage() {
           Memuat jobs…
         </p>
       )}
-      {error && <ErrorState title="Daftar job tidak bisa dimuat" message={error} onRetry={load} />}
+      {error && <ErrorState title="Daftar job tidak bisa dimuat" message={error} onRetry={() => void load()} />}
 
       {!loading && !error && jobs.length === 0 && (
         <EmptyState
@@ -132,41 +135,37 @@ export default function JobsPage() {
       )}
 
       {!loading && !error && jobs.length > 0 && (
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-zinc-800 text-left text-xs uppercase tracking-wide text-zinc-500">
-              <th className="py-2">Judul</th>
-              <th>State</th>
-              <th>Upaya</th>
-              <th>Diperbarui</th>
-              <th className="text-right">Detail</th>
-            </tr>
-          </thead>
-          <tbody>
-            {jobs.map((job) => (
-              <tr key={job.id} className="border-b border-zinc-900 hover:bg-zinc-900/60">
-                <td className="max-w-[380px] truncate py-3 pr-4">
-                  {job.title}
-                  {running[job.id] && <span className="ml-2 animate-pulse text-xs text-amber-400">berjalan…</span>}
-                  {job.last_error && <span className="block truncate text-xs text-rose-400">{job.last_error}</span>}
-                </td>
-                <td className="py-3 pr-4">
+        <ul className="px-job-list" aria-label="Antrean produksi">
+          {jobs.map((job) => (
+            <li key={job.id} className="px-frame px-job-card">
+              <div>
+                <div className="mb-2 flex flex-wrap items-center gap-2">
                   <StateChip state={job.state} />
-                </td>
-                <td className="py-3 pr-4 text-zinc-400">{job.attempts}</td>
-                <td className="py-3 pr-4 text-zinc-400">{job.updated_at}</td>
-                <td className="py-3 text-right">
-                  <Link
-                    href={`/jobs/${job.id}`}
-                    className="rounded-md border border-zinc-700 px-3 py-1.5 text-xs hover:bg-zinc-800"
-                  >
-                    Buka
-                  </Link>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                  {running[job.id] && <span className="px-chip">Run terpantau</span>}
+                </div>
+                <h2>{job.title}</h2>
+                {job.last_error && <p className="mt-2 text-sm text-rose-300">{job.last_error}</p>}
+                <dl className="mt-3">
+                  <div>
+                    <dt className="sr-only">ID</dt>
+                    <dd>{job.id}</dd>
+                  </div>
+                  <div>
+                    <dt className="inline">Upaya: </dt>
+                    <dd className="inline">{job.attempts}</dd>
+                  </div>
+                  <div>
+                    <dt className="inline">Diperbarui: </dt>
+                    <dd className="inline">{job.updated_at}</dd>
+                  </div>
+                </dl>
+              </div>
+              <Link href={`/jobs/${job.id}`} className="px-button">
+                Buka
+              </Link>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );
@@ -176,7 +175,8 @@ function FilterChip({ label, active, onClick }: { label: string; active: boolean
   return (
     <button
       onClick={onClick}
-      className={`rounded-full border px-3 py-1 text-xs transition ${
+      aria-pressed={active}
+      className={`rounded-md border px-3 py-1 text-xs transition ${
         active ? "border-sky-600 bg-sky-950 text-sky-200" : "border-zinc-700 text-zinc-400 hover:bg-zinc-900"
       }`}
     >

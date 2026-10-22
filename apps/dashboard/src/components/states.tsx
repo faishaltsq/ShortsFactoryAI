@@ -15,7 +15,7 @@ const STATE_STYLES: Record<string, string> = {
 export function StateChip({ state }: { state: string }) {
   const style = STATE_STYLES[state] ?? "border-zinc-700 bg-zinc-900 text-zinc-300";
   return (
-    <span className={`inline-block rounded-full border px-2 py-0.5 text-[11px] font-medium ${style}`}>
+    <span className={`px-chip ${style}`}>
       {state}
     </span>
   );
@@ -31,7 +31,7 @@ export function EmptyState({
   action?: ReactNode;
 }) {
   return (
-    <div className="rounded-xl border border-dashed border-zinc-800 bg-zinc-900/30 px-6 py-12 text-center">
+    <div className="px-frame border-dashed py-10 text-center">
       <p className="text-base font-medium text-zinc-200">{title}</p>
       <p className="mx-auto mt-2 max-w-md text-sm text-zinc-500">{description}</p>
       {action && <div className="mt-4 flex justify-center">{action}</div>}
@@ -49,13 +49,13 @@ export function ErrorState({
   onRetry?: () => void;
 }) {
   return (
-    <div className="rounded-xl border border-rose-900 bg-rose-950/40 px-6 py-5" role="alert">
+    <div className="px-frame border-rose-800 bg-rose-950/40" role="alert">
       <p className="text-sm font-medium text-rose-200">{title}</p>
       <p className="mt-1 break-words text-xs text-rose-300/80">{message}</p>
       {onRetry && (
         <button
           onClick={onRetry}
-          className="mt-3 rounded-md border border-rose-700 px-3 py-1.5 text-xs text-rose-200 hover:bg-rose-900/60"
+          className="px-button mt-3"
         >
           Coba lagi
         </button>

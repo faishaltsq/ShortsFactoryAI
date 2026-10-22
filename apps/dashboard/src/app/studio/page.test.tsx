@@ -173,7 +173,7 @@ describe("StudioPage", () => {
     });
     render(<StudioPage />);
     await screen.findByText("ScriptAgent");
-    fireEvent.click(await screen.findByRole("button", { name: "Kembalikan", exact: true }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Kembalikan$/ }));
     await waitFor(() => expect((screen.getByLabelText(/^FPS/) as HTMLInputElement).value).toBe("60"));
     await waitFor(() =>
       expect((screen.getByRole("button", { name: "Simpan perubahan" }) as HTMLButtonElement).disabled).toBe(true),
