@@ -6,6 +6,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import ts from 'typescript';
 import vm from 'node:vm';
+import {freeRemotionPort} from './free-port.mjs';
 
 const videoDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const outDir = process.argv[2];
@@ -26,12 +27,13 @@ const scene = fixture.scenes.find((s) => s.template === 'IllustratedStory');
 assert.ok(scene, 'fixture is missing the IllustratedStory scene');
 
 const cli = path.join(videoDir, 'node_modules/@remotion/cli/remotion-cli.js');
+const port = await freeRemotionPort();
 const still = (name, frame, props) => {
   const propsPath = path.join(outDir, `${name}-props.json`);
   const png = path.join(outDir, `${name}.png`);
   writeFileSync(propsPath, JSON.stringify(props));
   const r = spawnSync(process.execPath, [cli, 'still', 'src/index.ts', 'IllustratedStory', png,
-    `--props=${propsPath}`, `--frame=${frame}`, '--overwrite', '--log=error'],
+    `--props=${propsPath}`, `--frame=${frame}`, '--overwrite', '--log=error', `--port=${port}`],
     {cwd: videoDir, encoding: 'utf8', timeout: 180000});
   if (r.status !== 0) throw new Error(`${name}@${frame}: ${r.stderr} ${r.stdout}`);
   return png;

@@ -3,6 +3,7 @@ import {readFileSync, writeFileSync, mkdirSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {freeRemotionPort} from './free-port.mjs';
 
 const videoDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const outputDir = process.argv[2];
@@ -10,13 +11,14 @@ if (!outputDir || !path.isAbsolute(outputDir)) throw new Error('Pass an absolute
 mkdirSync(outputDir, {recursive: true});
 const storyboard = JSON.parse(readFileSync(path.join(videoDir, 'fixtures/all-templates.json'), 'utf8'));
 const cli = path.join(videoDir, 'node_modules/@remotion/cli/remotion-cli.js');
+const port = await freeRemotionPort();
 const results = [];
 for (const scene of storyboard.scenes) {
   const props = path.join(outputDir, `${scene.template}-props.json`);
   const png = path.join(outputDir, `${scene.template}.png`);
   writeFileSync(props, JSON.stringify({scene, theme: storyboard.theme, watermark: storyboard.watermark.text}));
   const result = spawnSync(process.execPath, [cli, 'still', 'src/index.ts', scene.template, png,
-    `--props=${props}`, '--frame=100', '--overwrite', '--log=error'], {cwd: videoDir, encoding: 'utf8', timeout: 120000});
+    `--props=${props}`, '--frame=100', '--overwrite', '--log=error', `--port=${port}`], {cwd: videoDir, encoding: 'utf8', timeout: 120000});
   if (result.status !== 0) throw new Error(`${scene.template}: ${result.stderr} ${result.stdout} ${result.error ?? ''}`);
   const bytes = readFileSync(png);
   if (bytes.toString('hex', 0, 8) !== '89504e470d0a1a0a' || bytes.readUInt32BE(16) !== 1080 || bytes.readUInt32BE(20) !== 1920) throw new Error('Invalid still dimensions');

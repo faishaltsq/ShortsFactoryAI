@@ -16,6 +16,7 @@ from packages.core.config import JOBS_DIR, get_settings
 from packages.core.orchestration import JobStore
 from packages.core.observability.hermes import HermesObserver, InvalidDelivery, ObserverDisabled
 from packages.core.observability.projection import StudioService
+from packages.core.observability.schedule import ScheduleService
 
 from .streaming import stream_events
 
@@ -111,6 +112,7 @@ def create_app(store: JobStore | None = None) -> FastAPI:
     settings = get_settings()
     job_store = store or JobStore(settings.db_path, JOBS_DIR)
     service = StudioService(job_store)
+    schedule = ScheduleService(job_store)
 
     app = FastAPI(title="Shorts Factory Studio API", version="1.0.0", docs_url=None, redoc_url=None, openapi_url=None)
     app.add_middleware(SameOriginMiddleware, allowed_origins=_csv("SHORTS_API_ALLOWED_ORIGINS", ""))
@@ -127,6 +129,11 @@ def create_app(store: JobStore | None = None) -> FastAPI:
             return service.snapshot(job_id=job_id, mode=mode)
         except (ValueError, KeyError) as exc:
             raise HTTPException(404, "job is unavailable") from exc
+
+    @app.get("/api/studio/schedule")
+    def studio_schedule() -> dict[str, Any]:
+        """What is in production, queued, or next. Read-only: it cannot dispatch a job."""
+        return schedule.entries()
 
     @app.get("/api/events")
     def events(after: int = Query(default=0, ge=0), limit: int = Query(default=100, ge=1, le=500),

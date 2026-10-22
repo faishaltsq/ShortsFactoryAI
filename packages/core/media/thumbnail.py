@@ -9,7 +9,7 @@ from ..config import PROJECT_ROOT
 from ..schemas import Storyboard, VideoMetadata
 from .assets import load_assets, render_storyboard
 from .contracts import AssetManifest, ThumbnailArtifact
-from .process import atomic_json, checked_path, json_hash, probe_media, run_checked, sha256_file
+from .process import atomic_json, checked_path, free_remotion_port, json_hash, probe_media, run_checked, sha256_file
 
 
 def _metadata(metadata: VideoMetadata | dict) -> dict:
@@ -73,7 +73,7 @@ class ThumbnailAgent:
         partial = checked_path(job_dir, "thumbnail.partial.png")
         run_checked(["node", str(cli), "still", "src/index.ts", "Thumbnail", str(partial),
                      "--props=" + str(props_path), "--frame=" + str(frame), "--public-dir=" + str(job_dir),
-                     "--overwrite", "--log=error"], cwd=self.video_dir, log_path=job_dir / "thumbnail.log",
+                     "--overwrite", "--log=error", "--port=" + str(free_remotion_port())], cwd=self.video_dir, log_path=job_dir / "thumbnail.log",
                     timeout=120, cancelled=cancelled)
         output = checked_path(job_dir, "thumbnail.png")
         partial.replace(output)

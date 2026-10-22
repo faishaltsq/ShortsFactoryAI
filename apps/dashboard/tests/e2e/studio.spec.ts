@@ -58,4 +58,47 @@ test.describe('Pixel Production Studio', () => {
     await expect(page.getByTestId('economy-toggle')).toContainText('Ekonomi render: aktif');
     await expect(page.locator('.figure--work')).toHaveCount(0);
   });
+
+  test('the schedule menu lists produced content with ON GOING / RESEARCHING / UPCOMING', async ({ page }) => {
+    await page.goto('/');
+    await waitConnected(page);
+    await page.getByTestId('menu-schedule').click();
+    await expect(page.getByTestId('menu-schedule')).toHaveAttribute('aria-current', 'page');
+
+    const list = page.getByTestId('schedule-list');
+    await expect(list).toBeVisible();
+    await expect(page.getByTestId('schedule-total')).toContainText('konten');
+
+    // Every rendered row carries one of the operator-facing statuses.
+    const statuses = await page.locator('[data-testid^="schedule-row-"]').evaluateAll(
+      rows => rows.map(row => row.getAttribute('data-status')));
+    expect(statuses.length).toBeGreaterThan(0);
+    for (const status of statuses) {
+      expect(['ON GOING', 'RESEARCHING', 'UPCOMING', 'SELESAI', 'GAGAL', 'TERTAHAN']).toContain(status);
+    }
+    expect(statuses).toContain('ON GOING');
+
+    // Filtering narrows the list without inventing rows.
+    await page.getByTestId('schedule-filter-on-going').click();
+    await expect(page.getByTestId('schedule-filter-on-going')).toHaveAttribute('aria-pressed', 'true');
+    const filtered = await page.locator('[data-testid^="schedule-row-"]').evaluateAll(
+      rows => rows.map(row => row.getAttribute('data-status')));
+    expect(filtered.every(status => status === 'ON GOING')).toBe(true);
+
+    await page.getByTestId('schedule-filter-semua').click();
+    await expect(page.locator('[data-testid^="schedule-row-"]')).toHaveCount(statuses.length);
+  });
+
+  test('a schedule row opens that job in the studio view', async ({ page }) => {
+    await page.goto('/');
+    await waitConnected(page);
+    await page.getByTestId('menu-schedule').click();
+    const first = page.locator('[data-testid^="schedule-row-"]').first();
+    await expect(first).toBeVisible();
+    const jobId = (await first.getAttribute('data-testid'))!.replace('schedule-row-', '');
+    await first.click();
+    await expect(page.getByTestId('menu-studio')).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByTestId('queue-count')).toBeVisible();
+    await expect(page.locator('.jobs')).toContainText(jobId.slice(0, 8));
+  });
 });

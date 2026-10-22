@@ -13,7 +13,7 @@ from ..schemas import Script, Storyboard
 from .assets import load_assets, render_storyboard
 from .audio import verify_audio
 from .contracts import AssetManifest, AudioArtifact, RenderArtifact, TechnicalQCArtifact
-from .process import atomic_json, checked_path, json_hash, probe_media, run_checked, sha256_file
+from .process import atomic_json, checked_path, free_remotion_port, json_hash, probe_media, run_checked, sha256_file
 from .progress import RemotionProgress, RenderProgress
 
 
@@ -87,7 +87,8 @@ class RenderAgent:
                     progress(update)
 
         run_checked(["node", str(cli), "render", "src/index.ts", "Short", str(partial),
-                     "--props=" + str(props_path), "--public-dir=" + str(job_dir), "--codec=h264", "--pixel-format=yuv420p", "--color-space=bt709", "--concurrency=2"],
+                     "--props=" + str(props_path), "--public-dir=" + str(job_dir), "--codec=h264", "--pixel-format=yuv420p", "--color-space=bt709", "--concurrency=2",
+                     "--port=" + str(free_remotion_port())],
                     cwd=self.video_dir, log_path=job_dir / "render.log", timeout=900, cancelled=cancelled,
                     on_output=observe if progress is not None else None)
         observe("\n")

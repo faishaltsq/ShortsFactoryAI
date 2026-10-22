@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import socket
 import subprocess
 import time
 from pathlib import Path
@@ -80,6 +81,55 @@ def run_checked(args: list[str], *, log_path: Path, cwd: Path | None = None,
             raise
         if proc.returncode:
             raise RuntimeError(f"media command exited {proc.returncode}; see {log_path.name}")
+
+
+def _port_is_free(port: int) -> bool:
+    """True only when nothing already answers on the port and it can be bound exclusively.
+
+    Remotion's own probe only tries to bind, which on Windows succeeds even while another
+    process is listening on the same port through a wildcard bind. Chrome then reaches that
+    foreign server instead of the bundle and composition lookup fails. A connect check plus
+    an exclusive bind is the only combination that rejects such a port.
+    """
+    for host, family in (("127.0.0.1", socket.AF_INET), ("::1", socket.AF_INET6)):
+        probe = socket.socket(family, socket.SOCK_STREAM)
+        probe.settimeout(0.25)
+        try:
+            if probe.connect_ex((host, port)) == 0:
+                return False
+        except OSError:
+            pass
+        finally:
+            probe.close()
+    holder = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    if os.name == "nt" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+        holder.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+    try:
+        holder.bind(("127.0.0.1", port))
+        holder.listen(1)
+        return True
+    except OSError:
+        return False
+    finally:
+        holder.close()
+
+
+def free_remotion_port(*, attempts: int = 40) -> int:
+    """Pick a port the Remotion preview server can own exclusively.
+
+    Passing an explicit port makes the renderer fail loudly instead of silently serving on a
+    port that a local dev server already occupies.
+    """
+    for _ in range(attempts):
+        candidate = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            candidate.bind(("127.0.0.1", 0))
+            port = candidate.getsockname()[1]
+        finally:
+            candidate.close()
+        if port >= 1024 and _port_is_free(port):
+            return port
+    raise RuntimeError("no free local port available for the Remotion preview server")
 
 
 def probe_media(path: Path) -> dict:

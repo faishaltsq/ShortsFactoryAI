@@ -1,4 +1,4 @@
-import type { Connection, StudioEvent, StudioSnapshot } from './contracts';
+import type { Connection, ProductionSchedule, StudioEvent, StudioSnapshot } from './contracts';
 
 export type StreamHandlers = {
   onSnapshot(snapshot: StudioSnapshot): void;
@@ -109,4 +109,10 @@ export function approveJob(jobId: string, operator: string): Promise<{ state: st
 
 export function rejectJob(jobId: string, reason: string, operator: string): Promise<{ state: string }> {
   return post(`/api/jobs/${jobId}/reject`, { operator, reason });
+}
+
+export async function fetchSchedule(): Promise<ProductionSchedule> {
+  const response = await fetch('/api/studio/schedule', { cache: 'no-store' });
+  if (!response.ok) throw new Error(`Jadwal tidak tersedia (${response.status})`);
+  return (await response.json()) as ProductionSchedule;
 }

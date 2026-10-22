@@ -25,3 +25,26 @@ def test_media_output_callback_observes_real_subprocess_output(tmp_path):
     assert "Rendered 5/10" in "".join(chunks)
     assert "Encoded 10/10" in "".join(chunks)
     assert "Encoded 10/10" in log.read_text(encoding="utf-8")
+
+
+def test_remotion_port_skips_a_port_that_already_answers():
+    """A port another process answers on must never be handed to the preview server.
+
+    On Windows a wildcard listener leaves a plain bind succeeding, which is why Remotion's own
+    probe accepts a busy port and Chrome then loads the foreign page instead of the bundle.
+    """
+    import socket
+
+    from packages.core.media.process import _port_is_free, free_remotion_port
+
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    busy_port = listener.getsockname()[1]
+    try:
+        assert _port_is_free(busy_port) is False
+        chosen = free_remotion_port()
+        assert chosen != busy_port and chosen >= 1024 and _port_is_free(chosen) is True
+    finally:
+        listener.close()
+    assert _port_is_free(busy_port) is True
