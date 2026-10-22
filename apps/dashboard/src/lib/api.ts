@@ -19,6 +19,7 @@ export type StudioPayload = {
   version: number;
   agents: Record<string, AgentOverride>;
   budget: {
+    unlimited?: boolean | null;
     max_daily_tokens?: number | null;
     max_daily_cost_usd?: number | null;
     max_retries?: number | null;
@@ -34,7 +35,7 @@ export type StudioPayload = {
 };
 
 export type EffectiveConfig = {
-  budget: Record<string, number>;
+  budget: Record<string, number | boolean | null>;
   production: Record<string, number | string>;
 };
 
@@ -101,7 +102,11 @@ export type UsageResponse = {
   tokens: number;
   cost: number;
   calls: number;
-  budget: Record<string, number>;
+  budget: {
+    max_daily_tokens?: number | null;
+    max_daily_cost_usd?: number | null;
+    unlimited?: boolean;
+  };
   by_agent: Record<string, string | number>[];
 };
 

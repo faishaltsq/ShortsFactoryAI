@@ -47,6 +47,9 @@ class AgentOverride(BaseModel):
 class BudgetOverride(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    # Batas keras per hari. `unlimited=True` mematikan keduanya sekaligus supaya
+    # operator tidak perlu mengarang angka besar yang seolah-olah batas nyata.
+    unlimited: bool | None = None
     max_daily_tokens: int | None = Field(None, ge=0)
     max_daily_cost_usd: float | None = Field(None, ge=0)
     max_retries: int | None = Field(None, ge=0, le=10)

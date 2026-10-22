@@ -181,4 +181,35 @@ describe("StudioPage", () => {
     expect(screen.queryByText("Belum tersimpan")).toBeNull();
     expect(rollback).toHaveBeenCalledWith("studio-fixture.json");
   });
+  it("mengirim unlimited=true dan mempertahankan angka yang sudah ada", async () => {
+    putStudio.mockResolvedValue({
+      saved: { ...SAVED, budget: { max_daily_tokens: 400000, unlimited: true } },
+      effective: { ...EFFECTIVE, budget: { ...EFFECTIVE.budget, unlimited: true } },
+    });
+    render(<StudioPage />);
+    await screen.findByText("ScriptAgent");
+    fireEvent.click(screen.getByRole("checkbox", { name: /Tanpa batas/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Simpan perubahan" }));
+    await waitFor(() => expect(putStudio).toHaveBeenCalled());
+    const payload = putStudio.mock.calls[0][0] as { budget: Record<string, unknown> };
+    expect(payload.budget.unlimited).toBe(true);
+  });
+
+  it("menampilkan tanpa batas ketika effective bernilai null", async () => {
+    getStudio.mockResolvedValue({
+      saved: { ...SAVED, budget: { unlimited: true } },
+      effective: { ...EFFECTIVE, budget: { max_daily_tokens: null, max_daily_cost_usd: null, unlimited: true } },
+      agent_keys: ["ScriptAgent"],
+      default_prompts: { ScriptAgent: "P" },
+      runner_stops: ["research", "script", "storyboard"],
+      personas: {},
+      studio_path: "/tmp/studio.json",
+      studio_exists: true,
+    });
+    render(<StudioPage />);
+    // personas kosong: tidak ada station, jadi tunggu kontrol budget itu sendiri.
+    const tokens = (await screen.findByLabelText(/Token harian/)) as HTMLInputElement;
+    expect(tokens.placeholder).toBe("tanpa batas");
+    expect((screen.getByRole("checkbox", { name: /Tanpa batas/ }) as HTMLInputElement).checked).toBe(true);
+  });
 });

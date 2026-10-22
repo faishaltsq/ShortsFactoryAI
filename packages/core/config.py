@@ -66,12 +66,29 @@ def _sget(section: str, key: str, fallback):
     return fallback if value is None else value
 
 
+def _budget_limit(section: str, key: str, env_fallback):
+    """Batas harian, dengan `unlimited: true` di studio.json mematikan batas itu.
+
+    Mengembalikan None berarti tanpa batas. Flag dibaca lebih dulu supaya angka
+    env tidak diam-diam tetap berlaku saat operator sudah memilih tanpa batas.
+    """
+    cfg = _studio()
+    if cfg is not None and getattr(cfg.budget, "unlimited", None) is True:
+        return None
+    return _sget(section, key, env_fallback)
+
+
 @dataclass(frozen=True)
 class BudgetConfig:
-    max_daily_tokens: int = field(default_factory=lambda: int(_sget("budget", "max_daily_tokens", _int("MAX_DAILY_TOKEN_BUDGET", 400_000))))
-    max_daily_cost_usd: float = field(default_factory=lambda: float(_sget("budget", "max_daily_cost_usd", _float("MAX_DAILY_COST_USD", 2.0))))
+    # None berarti tanpa batas: _check_budget melewati pemeriksaan itu.
+    max_daily_tokens: int | None = field(default_factory=lambda: _budget_limit("budget", "max_daily_tokens", _int("MAX_DAILY_TOKEN_BUDGET", 400_000)))
+    max_daily_cost_usd: float | None = field(default_factory=lambda: _budget_limit("budget", "max_daily_cost_usd", _float("MAX_DAILY_COST_USD", 2.0)))
     max_retries: int = field(default_factory=lambda: int(_sget("budget", "max_retries", _int("MAX_RETRIES", 5))))
     request_timeout_s: int = field(default_factory=lambda: _int("PROVIDER_TIMEOUT_S", 120))
+
+    @property
+    def unlimited(self) -> bool:
+        return self.max_daily_tokens is None and self.max_daily_cost_usd is None
 
 
 def _deepseek_key() -> str:

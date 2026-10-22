@@ -35,8 +35,11 @@ export default function UsagePage() {
   if (error) return <ErrorState title="Pemakaian tidak bisa dimuat" message={error} onRetry={() => void load()} />;
   if (!data) return null;
 
-  const tokenPct = data.budget.max_daily_tokens ? (data.tokens / data.budget.max_daily_tokens) * 100 : 0;
-  const costPct = data.budget.max_daily_cost_usd ? (data.cost / data.budget.max_daily_cost_usd) * 100 : 0;
+  // null = tanpa batas. Jangan dipetakan ke 0%, karena itu terbaca "budget habis".
+  const tokenLimit = data.budget.max_daily_tokens ?? null;
+  const costLimit = data.budget.max_daily_cost_usd ?? null;
+  const tokenPct = tokenLimit ? (data.tokens / tokenLimit) * 100 : 0;
+  const costPct = costLimit ? (data.cost / costLimit) * 100 : 0;
 
   return (
     <div className="space-y-6">
@@ -49,9 +52,12 @@ export default function UsagePage() {
       </header>
 
       <section className="px-frame space-y-4">
-        <Bar label="Token" used={data.tokens} limit={data.budget.max_daily_tokens} pct={tokenPct} />
-        <Bar label="Biaya (USD)" used={data.cost} limit={data.budget.max_daily_cost_usd} pct={costPct} money />
-        <p className="text-xs text-zinc-500">{Math.round(data.calls)} panggilan model hari ini.</p>
+        <Bar label="Token" used={data.tokens} limit={tokenLimit} pct={tokenPct} />
+        <Bar label="Biaya (USD)" used={data.cost} limit={costLimit} pct={costPct} money />
+        <p className="text-xs text-zinc-500">
+          {Math.round(data.calls)} panggilan model hari ini.
+          {data.budget.unlimited && " Budget harian sedang tanpa batas."}
+        </p>
       </section>
 
       <section className="px-frame" data-motion="paused">
@@ -124,7 +130,7 @@ function Bar({
 }: {
   label: string;
   used: number;
-  limit: number;
+  limit: number | null;
   pct: number;
   money?: boolean;
 }) {
@@ -135,11 +141,14 @@ function Bar({
       <div className="mb-1 flex justify-between text-sm">
         <span className="text-zinc-300">{label}</span>
         <span className="text-zinc-400">
-          {fmt(used)} / {fmt(limit)} ({Math.round(pct)}%)
+          {limit === null ? `${fmt(used)} / tanpa batas` : `${fmt(used)} / ${fmt(limit)} (${Math.round(pct)}%)`}
         </span>
       </div>
       <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-800">
-        <div className={`h-full ${tone}`} style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
+        <div
+          className={`h-full ${tone}`}
+          style={{ width: limit === null ? "0%" : `${Math.min(100, Math.max(0, pct))}%` }}
+        />
       </div>
     </div>
   );

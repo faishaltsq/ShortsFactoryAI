@@ -66,7 +66,7 @@ export function useStudio() {
     }));
   }, []);
 
-  const patchSection = useCallback((section: SectionKey, key: string, value: number | null) => {
+  const patchSection = useCallback((section: SectionKey, key: string, value: number | boolean | null) => {
     setDraft((prev) => ({ ...prev, [section]: { ...prev[section], [key]: value } }));
   }, []);
 

@@ -92,11 +92,25 @@ export default function StudioPage() {
         title="Budget harian"
         description="Guard sebelum panggilan model. Melebihi → job jadi BLOCKED, bukan gagal."
       >
+        <label className="mb-4 flex items-start gap-3 text-sm">
+          <input
+            type="checkbox"
+            checked={s.draft.budget.unlimited === true}
+            onChange={(e) => s.patchSection("budget", "unlimited", e.target.checked)}
+            className="mt-0.5 h-4 w-4 shrink-0 rounded border-zinc-600 bg-zinc-900 accent-sky-500"
+          />
+          <span>
+            <span className="font-medium text-zinc-200">Tanpa batas</span>
+            <span className="block text-xs text-zinc-400">
+              Mematikan batas token dan biaya sekaligus. Angka di bawah diabaikan selama ini aktif.
+            </span>
+          </span>
+        </label>
         <div className="grid gap-4 md:grid-cols-3">
           <NumberInput
             label="Token harian"
             value={s.draft.budget.max_daily_tokens ?? ""}
-            placeholder={String(eff.budget.max_daily_tokens)}
+            placeholder={String(eff.budget.max_daily_tokens ?? "tanpa batas")}
             error={s.errorFor("budget", "max_daily_tokens")}
             onChange={(v) => s.patchSection("budget", "max_daily_tokens", v)}
           />
@@ -104,7 +118,7 @@ export default function StudioPage() {
             label="Biaya harian (USD)"
             step={0.1}
             value={s.draft.budget.max_daily_cost_usd ?? ""}
-            placeholder={String(eff.budget.max_daily_cost_usd)}
+            placeholder={String(eff.budget.max_daily_cost_usd ?? "tanpa batas")}
             error={s.errorFor("budget", "max_daily_cost_usd")}
             onChange={(v) => s.patchSection("budget", "max_daily_cost_usd", v)}
           />

@@ -140,13 +140,17 @@ class ProviderRouter:
             return
         settings = get_settings()
         totals = self.tracker.daily_totals()
-        if totals["tokens"] >= settings.budget.max_daily_tokens:
+        # None = tanpa batas. Dibandingkan eksplisit supaya angka 0 tetap berarti
+        # "tidak boleh ada panggilan", bukan "tanpa batas".
+        tokens_limit = settings.budget.max_daily_tokens
+        if tokens_limit is not None and totals["tokens"] >= tokens_limit:
             raise BudgetExceededError(
-                f"daily token budget spent: {int(totals['tokens'])}/{settings.budget.max_daily_tokens}"
+                f"daily token budget spent: {int(totals['tokens'])}/{tokens_limit}"
             )
-        if totals["cost"] >= settings.budget.max_daily_cost_usd:
+        cost_limit = settings.budget.max_daily_cost_usd
+        if cost_limit is not None and totals["cost"] >= cost_limit:
             raise BudgetExceededError(
-                f"daily cost budget spent: ${totals['cost']:.4f}/${settings.budget.max_daily_cost_usd:.2f}"
+                f"daily cost budget spent: ${totals['cost']:.4f}/${cost_limit:.2f}"
             )
 
     _FAILURE_COOLDOWN = 3  # consecutive failures before a provider is benched

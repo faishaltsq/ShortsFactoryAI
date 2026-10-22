@@ -70,6 +70,7 @@ def _effective() -> dict[str, Any]:
             "max_daily_tokens": settings.budget.max_daily_tokens,
             "max_daily_cost_usd": settings.budget.max_daily_cost_usd,
             "max_retries": settings.budget.max_retries,
+            "unlimited": settings.budget.unlimited,
         },
         "production": {
             "fps": settings.production.fps,
@@ -309,7 +310,8 @@ def usage_today(authorization: str | None = Depends(require_token)) -> dict[str,
         ).fetchall()
     return {"tokens": totals["tokens"], "cost": totals["cost"], "calls": totals["calls"],
             "budget": {"max_daily_tokens": settings.budget.max_daily_tokens,
-                       "max_daily_cost_usd": settings.budget.max_daily_cost_usd},
+                       "max_daily_cost_usd": settings.budget.max_daily_cost_usd,
+                       "unlimited": settings.budget.unlimited},
             "by_agent": [dict(r) for r in rows]}
 
 
