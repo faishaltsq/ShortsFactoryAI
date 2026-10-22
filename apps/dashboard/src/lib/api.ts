@@ -34,7 +34,6 @@ export type StudioPayload = {
   /** Setelan provider non-rahasia. Absen pada payload API lama. */
   providers?: {
     worker?: ProviderField;
-    strategist_cli?: Pick<ProviderField, "enabled" | "model">;
     strategist_http?: ProviderField;
   };
   runner: { default_mode: "mock" | "live"; default_stop: string };
@@ -139,7 +138,6 @@ export type ProvidersResponse = {
   /** Setelan yang bisa diedit. Absen pada API lama. */
   editable?: {
     worker: EditableProvider;
-    strategist_cli: EditableProvider;
     strategist_http: EditableProvider;
   };
 };

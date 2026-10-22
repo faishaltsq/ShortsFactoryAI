@@ -143,7 +143,7 @@ Schemas in `config/schemas/*.json`. Validate on write, not on read.
 | Adapter | Transport | Notes |
 |---------|-----------|-------|
 | `DeepSeekProvider` | OpenAI-compatible HTTP | base_url + key from env; must be verified live before use |
-| `ClaudeCliProvider` | `claude -p --output-format json` subprocess | non-interactive, no API key needed, rate-limited by CLI |
+| `StrategistHttpProvider` | OpenAI-compatible HTTP | sole strategist provider; endpoint + model editable from web |
 | `MockProvider` | in-process fixtures | default in tests and when live access is unverified |
 
 Rules:

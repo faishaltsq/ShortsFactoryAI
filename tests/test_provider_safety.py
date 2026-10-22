@@ -20,24 +20,6 @@ def test_http_errors_do_not_echo_untrusted_provider_body(monkeypatch):
     assert "401" in str(caught.value)
 
 
-def test_claude_completion_disables_tools_and_session_storage(monkeypatch):
-    import packages.core.providers.claude_cli as adapter
-    from types import SimpleNamespace
-
-    calls = []
-    def fake_run(args, **kwargs):
-        calls.append((args, kwargs))
-        return SimpleNamespace(returncode=0, stdout='{"result":"ok","usage":{"input_tokens":2,"output_tokens":1}}', stderr="")
-    monkeypatch.setattr(adapter.subprocess, "run", fake_run)
-    result = adapter.ClaudeCliProvider(binary="claude", model="opus").complete(task="review", system="s", user="u")
-    args, kwargs = calls[0]
-    assert "--tools" in args and args[args.index("--tools") + 1] == ""
-    assert "--strict-mcp-config" in args
-    assert "--no-session-persistence" in args
-    assert kwargs["input"]
-    assert result.content == "ok"
-
-
 def test_local_router_key_is_never_forwarded_to_lookalike_origin(monkeypatch):
     from packages.core.config import _deepseek_key
     monkeypatch.setenv("DEEPSEEK_API_KEY", "")

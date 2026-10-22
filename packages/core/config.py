@@ -186,20 +186,14 @@ class DeepSeekConfig:
 
 
 @dataclass(frozen=True)
-class ClaudeCliConfig:
-    binary: str = field(default_factory=lambda: os.environ.get("CLAUDE_CLI_BIN", "claude"))
-    model: str = field(default_factory=lambda: _prov("strategist_cli", "model", os.environ.get("CLAUDE_CLI_MODEL", "opus")))
-    timeout_s: int = field(default_factory=lambda: _int("CLAUDE_CLI_TIMEOUT_S", 300))
-    enabled: bool = field(default_factory=lambda: bool(_prov("strategist_cli", "enabled", True)))
-
-
-@dataclass(frozen=True)
 class StrategistConfig:
-    """Fallback strategist lewat endpoint OpenAI-compatible.
+    """Provider strategist lewat endpoint OpenAI-compatible.
 
-    CLI punya satu titik kegagalan: kalau model upstream-nya mati, seluruh tier
-    strategist ikut mati karena chain-nya hanya berisi CLI + mock. Ini memberi
-    jalur kedua yang hidup selama gateway-nya hidup.
+    Satu-satunya jalur untuk tier strategist. Dulu ada adapter CLI sebagai jalur
+    utama, tapi CLI hanya melaporkan sehat saat binary-nya jalan, bukan saat
+    model di baliknya hidup: model mati tetap tampil hijau lalu gagal setiap
+    panggilan. Endpoint HTTP memberi satu titik kegagalan yang bisa dilihat dan
+    diganti operator sendiri dari web.
     """
 
     base_url: str = field(default_factory=lambda: _prov("strategist_http", "base_url", os.environ.get("STRATEGIST_BASE_URL", "")))
@@ -232,7 +226,6 @@ class ProductionConfig:
 class Settings:
     budget: BudgetConfig = field(default_factory=BudgetConfig)
     deepseek: DeepSeekConfig = field(default_factory=DeepSeekConfig)
-    claude_cli: ClaudeCliConfig = field(default_factory=ClaudeCliConfig)
     strategist: StrategistConfig = field(default_factory=StrategistConfig)
     production: ProductionConfig = field(default_factory=ProductionConfig)
     db_path: Path = field(default_factory=lambda: JOBS_DIR / "factory.db")

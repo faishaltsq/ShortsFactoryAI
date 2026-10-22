@@ -25,9 +25,13 @@ import ProvidersPage from "@/app/providers/page";
 const PAYLOAD = {
   health: [
     { ref: "worker:deepseek", healthy: true, model: "eg/elf/deepseek-v4.1-flash" },
-    { ref: "strategist:claude-cli", healthy: false, model: "opus" },
+    { ref: "strategist:strategist-http", healthy: true, model: "eg/elf/deepseek-v4.1-flash" },
   ],
-  mode: { worker_base_url: "http://localhost:20128/v1", worker_configured: true, strategist_model: "opus" },
+  mode: {
+    worker_base_url: "http://localhost:20128/v1",
+    worker_configured: true,
+    strategist_model: "eg/elf/deepseek-v4.1-flash",
+  },
   editable: {
     worker: {
       enabled: null,
@@ -39,7 +43,6 @@ const PAYLOAD = {
       has_key: true,
       configured: true,
     },
-    strategist_cli: { enabled: null, model: null, effective_model: "opus", binary: "claude" },
     strategist_http: {
       enabled: null,
       base_url: null,
@@ -79,25 +82,23 @@ beforeEach(() => {
 });
 
 describe("halaman providers", () => {
-  it("menampilkan setelan yang bisa diedit untuk ketiga provider", async () => {
+  it("menampilkan setelan yang bisa diedit untuk kedua provider HTTP", async () => {
     render(<ProvidersPage />);
     await waitFor(() => expect(screen.getByText("Worker (HTTP)")).toBeTruthy());
-    expect(screen.getByText("Strategist (CLI)")).toBeTruthy();
     expect(screen.getByText("Strategist (HTTP)")).toBeTruthy();
+    // Jalur CLI sudah dihapus: tidak boleh muncul lagi sebagai kartu.
+    expect(screen.queryByText("Strategist (CLI)")).toBeNull();
   });
 
-  it("strategist HTTP punya base URL dan tombol muat model, CLI tidak", async () => {
+  it("setiap provider punya base URL dan tombol muat model", async () => {
     render(<ProvidersPage />);
     await waitFor(() => expect(screen.getByText("Strategist (HTTP)")).toBeTruthy());
 
-    // Dua provider HTTP (worker + strategist_http) harus punya kolom base URL.
     const baseUrlInputs = screen.getAllByPlaceholderText(/http/i);
     expect(baseUrlInputs).toHaveLength(2);
 
-    // Tombol muat model hanya untuk yang punya endpoint HTTP.
     expect(screen.getAllByRole("button", { name: "Muat model" })).toHaveLength(2);
 
-    // CLI tidak punya endpoint, jadi tidak boleh punya kolom base URL.
     expect(screen.getAllByText("Base URL")).toHaveLength(2);
   });
 

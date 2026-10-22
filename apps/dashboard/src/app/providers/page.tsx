@@ -13,7 +13,7 @@ import {
 import { ErrorState } from "@/components/states";
 import { FieldRow, Toast } from "@/components/studio";
 
-type ProviderKey = "worker" | "strategist_cli" | "strategist_http";
+type ProviderKey = "worker" | "strategist_http";
 type ProviderDraft = {
   enabled?: boolean | null;
   base_url?: string | null;
@@ -24,19 +24,18 @@ type Draft = Record<ProviderKey, ProviderDraft>;
 
 const PROVIDER_LABEL: Record<ProviderKey, string> = {
   worker: "Worker (HTTP)",
-  strategist_cli: "Strategist (CLI)",
   strategist_http: "Strategist (HTTP)",
 };
 
 const PROVIDER_ROLE: Record<ProviderKey, string> = {
   worker: "Menjalankan research, script, dan storyboard. Dipakai paling sering.",
-  strategist_cli: "Review kreatif lewat Claude CLI. Tidak butuh API key.",
-  strategist_http: "Cadangan strategist saat CLI mati. Endpoint OpenAI-compatible.",
+  strategist_http:
+    "Review kreatif dan editorial. Satu-satunya provider untuk tier strategist — isi endpoint-nya sendiri kalau perlu.",
 };
 
 export default function ProvidersPage() {
   const [data, setData] = useState<ProvidersResponse | null>(null);
-  const [draft, setDraft] = useState<Draft>({ worker: {}, strategist_cli: {}, strategist_http: {} });
+  const [draft, setDraft] = useState<Draft>({ worker: {}, strategist_http: {} });
   const [models, setModels] = useState<Record<string, string[]>>({});
   const [modelsError, setModelsError] = useState<Record<string, string | null>>({});
   const [error, setError] = useState<string | null>(null);
@@ -207,14 +206,6 @@ export default function ProvidersPage() {
                 errorFor={errorFor}
               />
               <ProviderCard
-                name="strategist_cli"
-                editable={data.editable.strategist_cli}
-                draft={draft.strategist_cli ?? {}}
-                healthy={healthByRef["strategist:claude-cli"]}
-                onChange={patch}
-                errorFor={errorFor}
-              />
-              <ProviderCard
                 name="strategist_http"
                 editable={data.editable.strategist_http}
                 draft={draft.strategist_http ?? {}}
@@ -270,7 +261,6 @@ function ProviderCard({
   onChange: (key: ProviderKey, field: string, value: unknown) => void;
   errorFor: (provider: ProviderKey, field: string) => string | null;
 }) {
-  const isCli = name === "strategist_cli";
   const listId = `models-${name}`;
 
   return (
@@ -298,43 +288,37 @@ function ProviderCard({
         </div>
       </div>
 
-      {!isCli && (
-        <FieldRow
-          label="Base URL"
-          hint={`Aktif: ${editable.effective_base_url ?? "belum dikonfigurasi"}`}
-          error={errorFor(name, "base_url")}
-        >
-          <input
-            value={draft.base_url ?? ""}
-            onChange={(e) => onChange(name, "base_url", e.target.value || null)}
-            placeholder={editable.effective_base_url ?? "https://api.example.com/v1"}
-            spellCheck={false}
-            className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 font-mono text-sm outline-none focus:border-sky-500"
-          />
-        </FieldRow>
-      )}
+      <FieldRow
+        label="Base URL"
+        hint={`Aktif: ${editable.effective_base_url ?? "belum dikonfigurasi"}`}
+        error={errorFor(name, "base_url")}
+      >
+        <input
+          value={draft.base_url ?? ""}
+          onChange={(e) => onChange(name, "base_url", e.target.value || null)}
+          placeholder={editable.effective_base_url ?? "https://api.example.com/v1"}
+          spellCheck={false}
+          className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 font-mono text-sm outline-none focus:border-sky-500"
+        />
+      </FieldRow>
 
       <FieldRow
         label="Model"
-        hint={
-          isCli
-            ? `Aktif: ${editable.effective_model ?? "-"}`
-            : `Aktif: ${editable.effective_model ?? "belum dikonfigurasi"}${
-                editable.has_key === false ? " · tanpa API key" : ""
-              }`
-        }
+        hint={`Aktif: ${editable.effective_model ?? "belum dikonfigurasi"}${
+          editable.has_key === false ? " · tanpa API key" : ""
+        }`}
         error={errorFor(name, "model")}
       >
         <div className="flex gap-2">
           <input
-            list={isCli ? undefined : listId}
+            list={listId}
             value={draft.model ?? ""}
             onChange={(e) => onChange(name, "model", e.target.value || null)}
             placeholder={editable.effective_model ?? "nama model"}
             spellCheck={false}
             className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 font-mono text-sm outline-none focus:border-sky-500"
           />
-          {!isCli && onReloadModels && (
+          {onReloadModels && (
             <button
               type="button"
               onClick={onReloadModels}
@@ -344,38 +328,27 @@ function ProviderCard({
             </button>
           )}
         </div>
-        {!isCli && (
-          <datalist id={listId}>
-            {models?.map((m) => (
-              <option key={m} value={m} />
-            ))}
-          </datalist>
-        )}
+        <datalist id={listId}>
+          {models?.map((m) => (
+            <option key={m} value={m} />
+          ))}
+        </datalist>
       </FieldRow>
 
-      {!isCli && (
-        <FieldRow label="Temperature default" hint="Dipakai bila agent tidak punya nilai sendiri">
-          <input
-            type="number"
-            step={0.05}
-            min={0}
-            max={2}
-            value={draft.temperature ?? ""}
-            onChange={(e) =>
-              onChange(name, "temperature", e.target.value === "" ? null : Number(e.target.value))
-            }
-            placeholder="0.7"
-            className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm outline-none focus:border-sky-500"
-          />
-        </FieldRow>
-      )}
-
-      {isCli && (
-        <p className="text-xs text-zinc-500">
-          Binary: <code className="text-zinc-300">{editable.binary ?? "claude"}</code>. Model di sini
-          harus tersedia di CLI tersebut.
-        </p>
-      )}
+      <FieldRow label="Temperature default" hint="Dipakai bila agent tidak punya nilai sendiri">
+        <input
+          type="number"
+          step={0.05}
+          min={0}
+          max={2}
+          value={draft.temperature ?? ""}
+          onChange={(e) =>
+            onChange(name, "temperature", e.target.value === "" ? null : Number(e.target.value))
+          }
+          placeholder="0.7"
+          className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm outline-none focus:border-sky-500"
+        />
+      </FieldRow>
 
       {editable.key_origin_mismatch && (
         <p
@@ -396,7 +369,7 @@ function ProviderCard({
 
 function toDraft(data: ProvidersResponse): Draft {
   const editable = data.editable;
-  if (!editable) return { worker: {}, strategist_cli: {}, strategist_http: {} };
+  if (!editable) return { worker: {}, strategist_http: {} };
   const pick = (p: EditableProvider) => ({
     enabled: p.enabled ?? null,
     base_url: p.base_url ?? null,
@@ -405,10 +378,6 @@ function toDraft(data: ProvidersResponse): Draft {
   });
   return {
     worker: pick(editable.worker),
-    strategist_cli: {
-      enabled: editable.strategist_cli.enabled ?? null,
-      model: editable.strategist_cli.model ?? null,
-    },
     strategist_http: pick(editable.strategist_http),
   };
 }

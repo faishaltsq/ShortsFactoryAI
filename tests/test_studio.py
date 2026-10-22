@@ -79,7 +79,7 @@ def test_history_menyimpan_versi_lama_saat_isi_berubah(tmp_path):
     assert history[0]["name"].startswith("studio-")
     snapshot = tmp_path / "studio-history" / history[0]["name"]
     assert _raw(snapshot) == {"version": 1, "agents": {}, "budget": {}, "production": {},
-                              "providers": {"worker": {}, "strategist_cli": {}, "strategist_http": {}},
+                              "providers": {"worker": {}, "strategist_http": {}},
                               "runner": {"default_mode": "mock", "default_stop": "storyboard"}}
     assert _raw(path)["budget"]["max_daily_tokens"] == 1
 

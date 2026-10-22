@@ -11,7 +11,6 @@ from packages.core.config import get_settings
 from packages.core.providers import MockProvider, ProviderRouter
 from packages.core.providers.router import build_router
 from packages.core.studio import (
-    CliProviderOverride,
     ProviderOverride,
     ProvidersOverride,
     StudioConfig,
@@ -113,18 +112,29 @@ def test_enabled_false_mengeluarkan_provider_dari_chain(tmp_path, monkeypatch):
     _isolate(tmp_path, monkeypatch)
     monkeypatch.setenv("DEEPSEEK_BASE_URL", "http://localhost:20128/v1")
     monkeypatch.setenv("DEEPSEEK_MODEL", "eg/elf/deepseek-v4.1-flash")
+    monkeypatch.setenv("STRATEGIST_BASE_URL", "http://localhost:20128/v1")
+    monkeypatch.setenv("STRATEGIST_MODEL", "eg/elf/deepseek-v4.1-flash")
     save_studio(StudioConfig(providers=ProvidersOverride(
         worker=ProviderOverride(enabled=False),
-        strategist_cli=CliProviderOverride(enabled=False),
+        strategist_http=ProviderOverride(enabled=False),
     )))
     get_settings.cache_clear()
     settings = get_settings()
     assert settings.deepseek.configured is False
-    assert settings.claude_cli.enabled is False
+    assert settings.strategist.configured is False
     router = build_router(settings, mock_only=False)
-    names = [p.name for p in router.worker_chain]
-    assert "deepseek" not in names
-    assert "claude-cli" not in [p.name for p in router.strategist_chain]
+    assert "deepseek" not in [p.name for p in router.worker_chain]
+    assert "strategist-http" not in [p.name for p in router.strategist_chain]
+
+
+def test_strategist_chain_hanya_http_dan_mock(tmp_path, monkeypatch):
+    """Tier strategist tidak lagi punya jalur CLI: satu provider nyata + mock."""
+    _isolate(tmp_path, monkeypatch)
+    monkeypatch.setenv("STRATEGIST_BASE_URL", "http://localhost:20128/v1")
+    monkeypatch.setenv("STRATEGIST_MODEL", "eg/elf/deepseek-v4.1-flash")
+    get_settings.cache_clear()
+    router = build_router(get_settings(), mock_only=False)
+    assert [p.name for p in router.strategist_chain] == ["strategist-http", "mock"]
 
 
 def test_temperature_provider_dipakai_sebagai_default(tmp_path, monkeypatch):

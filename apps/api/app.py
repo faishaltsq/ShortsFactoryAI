@@ -326,7 +326,7 @@ def providers(authorization: str | None = Depends(require_token)) -> dict[str, A
                    for ref, info in health_report.items()],
         "mode": {"worker_base_url": settings.deepseek.base_url or None,
                  "worker_configured": settings.deepseek.configured,
-                 "strategist_model": settings.claude_cli.model},
+                 "strategist_model": settings.strategist.model or None},
         # Setelan yang bisa diedit operator. Tidak ada nilai rahasia di sini:
         # hanya apakah sebuah kunci tersedia, bukan isinya.
         "editable": {
@@ -340,12 +340,6 @@ def providers(authorization: str | None = Depends(require_token)) -> dict[str, A
                 "has_key": bool(settings.deepseek.api_key),
                 "key_origin_mismatch": settings.deepseek.key_origin_mismatch,
                 "configured": settings.deepseek.configured,
-            },
-            "strategist_cli": {
-                "enabled": saved.providers.strategist_cli.enabled,
-                "model": saved.providers.strategist_cli.model,
-                "effective_model": settings.claude_cli.model,
-                "binary": settings.claude_cli.binary,
             },
             "strategist_http": {
                 "enabled": saved.providers.strategist_http.enabled,

@@ -9,7 +9,7 @@ from packages.core.studio import ProviderOverride, ProvidersOverride, StudioConf
 def test_providers_menyertakan_setelan_yang_bisa_diedit(tmp_path, monkeypatch):
     client, _ = _client(tmp_path, monkeypatch)
     body = client.get("/api/providers").json()
-    assert set(body["editable"]) == {"worker", "strategist_cli", "strategist_http"}
+    assert set(body["editable"]) == {"worker", "strategist_http"}
     assert "api_key" not in body["editable"]["worker"]
     # Hanya status ada/tidak, bukan nilainya.
     assert isinstance(body["editable"]["worker"]["has_key"], bool)
@@ -48,14 +48,13 @@ def test_put_studio_menyimpan_setelan_provider(tmp_path, monkeypatch):
     payload = client.get("/api/studio").json()["saved"]
     payload["providers"] = {
         "worker": {"base_url": "https://api.example.com/v1", "model": "m", "enabled": True},
-        "strategist_cli": {"enabled": False},
         "strategist_http": {"model": "s"},
     }
     res = client.put("/api/studio", json=payload)
     assert res.status_code == 200, res.text
     saved = res.json()["saved"]["providers"]
     assert saved["worker"]["model"] == "m"
-    assert saved["strategist_cli"]["enabled"] is False
+    assert saved["strategist_http"]["model"] == "s"
 
 
 def test_base_url_dengan_kredensial_ditolak_api(tmp_path, monkeypatch):

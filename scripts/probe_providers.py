@@ -31,8 +31,8 @@ def main() -> int:
     print(f"deepseek configured: {settings.deepseek.configured}")
     print(f"deepseek base_url:   {settings.deepseek.base_url or '(unset)'}")
     print(f"deepseek model:      {settings.deepseek.model or '(unset)'}")
-    print(f"claude cli bin:      {settings.claude_cli.binary}")
-    print(f"claude cli model:    {settings.claude_cli.model}")
+    print(f"strategist base_url: {settings.strategist.base_url or '(unset)'}")
+    print(f"strategist model:    {settings.strategist.model or '(unset)'}")
 
     if not args.live:
         print("dry run (no completions). use --live to send one prompt per provider.")

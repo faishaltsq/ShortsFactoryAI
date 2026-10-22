@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_STUDIO_PATH = PROJECT_ROOT / "config" / "studio.json"
@@ -109,21 +109,25 @@ class ProviderOverride(BaseModel):
         return value.strip().rstrip("/")
 
 
-class CliProviderOverride(BaseModel):
-    """CLI tidak punya endpoint maupun temperature: hanya hidup/mati dan model."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    enabled: bool | None = None
-    model: str | None = Field(None, min_length=1, max_length=200)
-
-
 class ProvidersOverride(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     worker: ProviderOverride = Field(default_factory=ProviderOverride)
-    strategist_cli: CliProviderOverride = Field(default_factory=CliProviderOverride)
     strategist_http: ProviderOverride = Field(default_factory=ProviderOverride)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_retired_cli(cls, value):
+        """Buang `strategist_cli` dari dokumen lama.
+
+        Adapter CLI sudah dihapus, tapi snapshot riwayat dan file studio yang
+        ditulis versi sebelumnya masih memuat kuncinya. Tanpa ini, `extra=forbid`
+        membuat rollback ke snapshot lama gagal total — padahal justru rollback
+        yang dibutuhkan saat sesuatu salah.
+        """
+        if isinstance(value, dict) and "strategist_cli" in value:
+            value = {k: v for k, v in value.items() if k != "strategist_cli"}
+        return value
 
 
 class StudioConfig(BaseModel):

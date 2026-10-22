@@ -16,7 +16,6 @@ from pathlib import Path
 from ..config import Settings, get_settings
 from ..studio import StudioConfigError, load_studio
 from .base import BudgetExceededError, Provider, ProviderError, ProviderResult
-from .claude_cli import ClaudeCliProvider
 from .mock import MockProvider
 from .openai_compat import OpenAICompatProvider
 
@@ -271,18 +270,6 @@ def build_router(settings: Settings | None = None, *, job_id: str | None = None,
     worker_chain.append(MockProvider())
 
     strategist_chain: list[Provider] = []
-    if settings.claude_cli.enabled:
-        strategist_chain.append(
-            ClaudeCliProvider(
-                binary=settings.claude_cli.binary,
-                model=settings.claude_cli.model,
-                tier="strategist",
-                timeout_s=settings.claude_cli.timeout_s,
-            )
-        )
-    # Jalan kedua: CLI bisa mati total kalau model upstream-nya nonaktif, dan
-    # tier strategist tidak punya provider lain. Urutannya setelah CLI supaya
-    # kualitas review tetap dari CLI saat tersedia.
     if settings.strategist.configured:
         strategist_chain.append(
             OpenAICompatProvider(
