@@ -19,6 +19,9 @@ def isolated_runtime(tmp_path, monkeypatch):
         "RENDERS_DIR": data / "renders", "ASSETS_DIR": data / "assets",
     }.items():
         monkeypatch.setattr(config, name, value)
+    # Tanpa ini, suite membaca config/studio.json milik operator dan hasilnya
+    # berubah setiap kali operator mengubah setelan nyata (mis. budget unlimited).
+    monkeypatch.setenv("STUDIO_CONFIG", str(tmp_path / "studio.json"))
     monkeypatch.setenv("MAX_DAILY_TOKEN_BUDGET", "1000000")
     get_settings.cache_clear()
     yield
