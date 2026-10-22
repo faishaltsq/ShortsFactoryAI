@@ -4,7 +4,9 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from typing import Any
+from uuid import uuid4
 
+from ..activity import ActivityReporter, STAGE_AGENTS
 from ..agents import CreativeDirectorAgent, MetadataAgent, QualityAgent, ResearchAgent, ScriptAgent, StoryboardAgent, TopicSelectionAgent
 from ..artifacts import validate_artifact
 from ..config import Settings, get_settings
@@ -161,25 +163,32 @@ class PipelineRunner:
                                cancelled=lambda: self._cancelled(job_id))
         self.store.write_artifact(job_id, "qc.json", qc.model_dump(mode="json"))
 
-    def _draft_checks(self, job_id: str, report: PipelineReport) -> None:
+    def _draft_checks(self, job_id: str, report: PipelineReport, activity: ActivityReporter) -> None:
         script, storyboard = self._script_model(job_id), self._storyboard_model(job_id)
         root = self.store.artifact_root(job_id)
-        if not (root / "draft_qc.json").exists():
+        reused = (root / "draft_qc.json").exists()
+        activity.begin("QualityAgent", "DRAFT_QC", reused=reused)
+        if not reused:
             review = QualityAgent(self.router).run(storyboard, script)
             self.store.write_artifact(job_id, "draft_qc.json", review)
         review = self._read(job_id, "draft_qc.json")
         passed = review["overall"] != "fail" and review["editorial"]["pass"]
-        report.stages.append(StageReport("DRAFT_QC", passed, "draft_qc.json", detail="draft only; no rendered media verification"))
+        report.stages.append(StageReport("DRAFT_QC", passed, "draft_qc.json",
+                                        detail="draft only; no rendered media verification"))
         if not passed:
             raise ValueError("draft editorial review failed")
-        if not (root / "metadata.json").exists():
+        activity.complete("QualityAgent", "draft_qc.json")
+        reused = (root / "metadata.json").exists()
+        activity.begin("MetadataAgent", "METADATA", reused=reused)
+        if not reused:
             meta = MetadataAgent(self.router).run(script)
             self.store.write_artifact(job_id, "metadata.json", meta.model_dump(mode="json"))
         self._read(job_id, "metadata.json")
+        activity.complete("MetadataAgent", "metadata.json")
         report.stages.append(StageReport("METADATA", True, "metadata.json"))
 
     def run(self, job_id: str, *, stop_at: JobState = JobState.STORYBOARD_READY,
-            cancelled=None) -> PipelineReport:
+            cancelled=None, activity_token: str | None = None) -> PipelineReport:
         stages = self._stages()
         if stop_at not in {state for state, _, _ in stages}:
             raise ValueError(f"unsupported stop: {stop_at.value}")
@@ -193,7 +202,10 @@ class PipelineRunner:
             return report
         self.router.job_id = job_id
         current_stage = "PREFLIGHT"
+        activity = ActivityReporter(self.store, job_id, activity_token or uuid4().hex)
+        outcome = "interrupted"
         try:
+            activity.begin("FactoryOrchestrator", "PREFLIGHT")
             mode = "mock" if self.force_mock else "live"
             prior_mode = record.payload.get("provider_mode")
             if prior_mode and prior_mode != mode:
@@ -214,6 +226,7 @@ class PipelineRunner:
                     break
                 started = time.perf_counter()
                 reused = (self.store.artifact_root(job_id) / artifact).exists()
+                activity.begin(STAGE_AGENTS[state.value], state.value, reused=reused)
                 if reused:
                     data = self._read(job_id, artifact)
                     if artifact == "review.json" and data["review"]["verdict"] == "reject":
@@ -229,27 +242,36 @@ class PipelineRunner:
                         self.store.transition(job_id, state, detail=f"{artifact} {'reused' if reused else 'validated'}")
                     elif current not in PIPELINE_ORDER or PIPELINE_ORDER.index(current) < PIPELINE_ORDER.index(state):
                         raise ValueError(f"cannot advance from {current.value} to {state.value}")
+                # Only after _read and legal state advancement: an artifact that
+                # failed validation never counts as this agent's completed work.
+                activity.complete(STAGE_AGENTS[state.value], artifact)
                 report.stages.append(StageReport(state.value, True, artifact, int((time.perf_counter() - started) * 1000),
                                                 "reused existing artifact" if reused else "; ".join(self.router.last_notes)))
                 if state is stop_at:
                     break
             if stop_at is JobState.STORYBOARD_READY and not report.blocked_reason:
                 current_stage = "DRAFT_CHECKS"
-                self._draft_checks(job_id, report)
+                self._draft_checks(job_id, report, activity)
+            outcome = "stopped" if report.blocked_reason else "done"
         except BudgetExceededError as exc:
+            outcome = "blocked"
             current = self.store.get(job_id).state
             if can_transition(current, JobState.BLOCKED):
                 self.store.transition(job_id, JobState.BLOCKED, detail=str(exc))
             report.blocked_reason = str(exc)
             report.stages.append(StageReport(current_stage, False, detail=str(exc)))
         except (ProviderError, ValueError, KeyError, OSError, RuntimeError) as exc:
+            outcome = "failed"
             current = self.store.get(job_id).state
             detail = f"{type(exc).__name__}: {str(exc)[:400]}"
             if can_transition(current, JobState.FAILED):
                 self.store.transition(job_id, JobState.FAILED, error=detail)
             report.stages.append(StageReport(current_stage, False, detail=detail))
         finally:
-            self.store.unlock(job_id)
+            try:
+                activity.finish(outcome)
+            finally:
+                self.store.unlock(job_id)
         report.final_state = self.store.get(job_id).state.value
         return report
 

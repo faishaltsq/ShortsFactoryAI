@@ -14,6 +14,14 @@ def _client(tmp_path, monkeypatch):
     monkeypatch.delenv("STUDIO_TOKEN", raising=False)
     get_settings.cache_clear()
     from apps.api.app import app
+
+    # `from ... import JOBS_DIR` di modul API mengikat nilai lama, jadi monkeypatch
+    # pada packages.core.config saja tidak cukup: fixture ini bisa menulis ke
+    # data/jobs operator yang asli.
+    import importlib
+
+    api_module = importlib.import_module("apps.api.app")
+    monkeypatch.setattr(api_module, "JOBS_DIR", tmp_path / "jobs")
     return TestClient(app), tmp_path / "studio.json"
 
 
@@ -38,6 +46,13 @@ def test_get_studio_returns_saved_effective_defaults_and_agent_keys(tmp_path, mo
     assert body["personas"]["ScriptAgent"]["tier"] == "worker"
     assert body["personas"]["CreativeDirectorAgent"]["tier"] == "strategist"
     assert body["personas"]["ScriptAgent"]["stage"] == "SCRIPT_GENERATED"
+    # Roster lengkap: 12 peran, termasuk tahap deterministik tanpa prompt yang bisa diedit.
+    assert body["team"]["RenderAgent"]["editable"] is False
+    assert body["team"]["PublishAgent"]["available"] is False
+    assert body["team"]["ScriptAgent"]["persona"] == "Sora"
+    assert set(body["team"]) - set(body["agent_keys"]) == {
+        "FactoryOrchestrator", "AssetAgent", "AudioAgent", "RenderAgent", "PublishAgent"
+    }
 
 
 def test_put_studio_validates_and_persists(tmp_path, monkeypatch):
@@ -117,3 +132,23 @@ def test_cancel_run_lewat_api(tmp_path, monkeypatch):
     res = client.post(f"/api/jobs/{created['job_id']}/cancel")
     assert res.status_code == 200
     assert res.json()["status"] in {"running", "idle"}
+
+
+def test_detail_preserves_activity_but_does_not_invent_liveness_after_restart(tmp_path, monkeypatch):
+    import importlib
+
+    from packages.core.activity import ActivityReporter
+    from packages.core.orchestration import JobStore
+
+    client, _ = _client(tmp_path, monkeypatch)
+    module = importlib.import_module("apps.api.app")
+    store = JobStore(tmp_path / "isolated.db", tmp_path / "jobs")
+    monkeypatch.setattr(module, "_store", lambda: store)
+    job = store.create(title="restart")
+    ActivityReporter(store, job.id, "d" * 32).begin("ScriptAgent", "SCRIPT_GENERATED")
+    with module.RUN_LOCK:
+        module.RUNS.pop(job.id, None)
+    body = client.get(f"/api/jobs/{job.id}").json()
+    assert body["record"]["payload"]["studio_activity"]["agent"] == "ScriptAgent"
+    assert body["run"]["running"] is False
+    assert "activity_token" not in body["run"]

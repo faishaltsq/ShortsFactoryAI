@@ -141,6 +141,29 @@ class JobStore:
         self.snapshot(job_id)
         return self.get(job_id)
 
+    def set_activity(self, job_id: str, value: dict[str, Any]) -> None:
+        """Persist a runner-reported activity snapshot.
+
+        Validation happens before the write so an invalid snapshot cannot leave
+        a partial row. State, attempts, updated_at, and job_events are untouched:
+        this is observation, not a lifecycle transition.
+        """
+        from ..activity import ActivitySnapshot
+
+        activity = ActivitySnapshot.model_validate(value).model_dump(mode="json")
+        with self._lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute("SELECT payload FROM jobs WHERE id=?", (job_id,)).fetchone()
+            if row is None:
+                raise KeyError(f"job {job_id} not found")
+            payload = json.loads(row["payload"])
+            payload["studio_activity"] = activity
+            conn.execute(
+                "UPDATE jobs SET payload=? WHERE id=?",
+                (json.dumps(payload, ensure_ascii=False), job_id),
+            )
+        self.snapshot(job_id)
+
     def events(self, job_id: str, limit: int = 200) -> list[dict[str, Any]]:
         with self._connect() as conn:
             rows = conn.execute(

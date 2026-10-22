@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import threading
 from typing import Any
+from uuid import uuid4
 
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
@@ -19,7 +20,7 @@ from packages.core.config import JOBS_DIR, get_settings
 from packages.core.orchestration import JobState, JobStore
 from packages.core.orchestration.states import STOP_POINTS
 from packages.core.pipeline import PipelineRunner
-from packages.core.personas import PERSONAS
+from packages.core.personas import PERSONAS, TEAM
 from packages.core.prompts import DEFAULT_SYSTEM
 from packages.core.providers.router import UsageTracker, build_router
 from packages.core.studio import (
@@ -98,6 +99,7 @@ def get_studio_payload(authorization: str | None = Depends(require_token)) -> di
         "default_prompts": dict(DEFAULT_SYSTEM),
         "runner_stops": list(STOP_POINTS),
         "personas": {k: dict(v) for k, v in PERSONAS.items()},
+        "team": {k: dict(v) for k, v in TEAM.items()},
         "studio_path": str(studio_path()),
         "studio_exists": studio_path().exists(),
     }
@@ -173,7 +175,12 @@ def _start_run(job_id: str, *, mode: str, stop: str) -> None:
     with RUN_LOCK:
         if RUNS.get(job_id, {}).get("running"):
             raise HTTPException(status_code=409, detail="job sedang berjalan")
-        RUNS[job_id] = {"running": True, "mode": mode, "stop": stop, "report": None, "error": None}
+        # Run identity: random, not a credential. The dashboard only treats an
+        # activity snapshot as live when its token matches the current run, so a
+        # restarted API never presents an old snapshot as ongoing work.
+        activity_token = uuid4().hex
+        RUNS[job_id] = {"running": True, "mode": mode, "stop": stop, "report": None,
+                        "error": None, "activity_token": activity_token}
         CANCELLED_RUNS.discard(job_id)
 
     def _worker() -> None:
@@ -181,15 +188,18 @@ def _start_run(job_id: str, *, mode: str, stop: str) -> None:
             settings = get_settings()
             store = JobStore(settings.db_path, JOBS_DIR)
             report = PipelineRunner(store, settings, force_mock=(mode == "mock")).run(
-                job_id, stop_at=STOP_POINTS[stop], cancelled=lambda: job_id in CANCELLED_RUNS
+                job_id, stop_at=STOP_POINTS[stop], cancelled=lambda: job_id in CANCELLED_RUNS,
+                activity_token=activity_token,
             )
             with RUN_LOCK:
                 RUNS[job_id] = {"running": False, "mode": mode, "stop": stop,
-                                "report": report.as_dict(), "error": None}
+                                "report": report.as_dict(), "error": None,
+                                "activity_token": activity_token}
         except Exception as exc:  # noqa: BLE001 - batas thread API
             with RUN_LOCK:
                 RUNS[job_id] = {"running": False, "mode": mode, "stop": stop, "report": None,
-                                "error": f"{type(exc).__name__}: {exc}"}
+                                "error": f"{type(exc).__name__}: {exc}",
+                                "activity_token": activity_token}
         finally:
             with RUN_LOCK:
                 CANCELLED_RUNS.discard(job_id)

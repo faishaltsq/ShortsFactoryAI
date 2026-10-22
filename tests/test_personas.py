@@ -26,3 +26,20 @@ def test_creative_director_is_strategist_and_stage_matches_pipeline_order():
     assert PERSONAS["CreativeDirectorAgent"]["tier"] == "strategist"
     assert PERSONAS["ScriptAgent"]["stage"] == "SCRIPT_GENERATED"
     assert PERSONAS["StoryboardAgent"]["stage"] == "STORYBOARD_READY"
+
+
+def test_full_team_is_distinct_and_keeps_configurable_subset():
+    from packages.core.personas import TEAM
+
+    assert set(TEAM) == set(AGENT_KEYS) | {
+        "FactoryOrchestrator", "AssetAgent", "AudioAgent", "RenderAgent", "PublishAgent"
+    }
+    assert len({p["persona"] for p in TEAM.values()}) == len(TEAM)
+    assert len({p["accessory"] for p in TEAM.values()}) == len(TEAM)
+    assert {k for k, p in TEAM.items() if p["editable"]} == set(AGENT_KEYS)
+    assert TEAM["PublishAgent"]["available"] is False
+    for key, profile in TEAM.items():
+        for field in ("personality", "motto", "zone", "accessory", "hair", "skin"):
+            assert profile[field], (key, field)
+        if key in AGENT_CLASSES:
+            assert profile["tier"] == AGENT_CLASSES[key].tier

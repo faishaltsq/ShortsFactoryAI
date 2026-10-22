@@ -44,6 +44,8 @@ export type StudioResponse = {
   default_prompts: Record<string, string>;
   runner_stops: string[];
   personas: Record<string, PersonaInfo>;
+  /** Full 12-role roster. Absent on older API builds. */
+  team?: Record<string, PersonaInfo>;
   studio_path: string;
   studio_exists: boolean;
 };
@@ -55,6 +57,16 @@ export type PersonaInfo = {
   stage: string;
   tier: string;
   accent: string;
+  personality?: string;
+  motto?: string;
+  zone?: string;
+  accessory?: string;
+  hair?: string;
+  skin?: string;
+  /** False for deterministic stages with no editable system prompt. */
+  editable?: boolean;
+  /** False for roles this workspace does not implement yet. */
+  available?: boolean;
 };
 
 export type HistoryEntry = { name: string; mtime: number; config: StudioPayload };
@@ -73,7 +85,15 @@ export type JobDetail = {
   record: JobRow & { payload: Record<string, unknown> };
   events: { from_state: string | null; to_state: string; detail: string; created_at: string }[];
   artifacts: string[];
-  run: { running: boolean; mode?: string; stop?: string; report?: unknown; error?: string | null };
+  run: {
+    running: boolean;
+    mode?: string;
+    stop?: string;
+    report?: unknown;
+    error?: string | null;
+    /** Present only while this API process owns the run. */
+    activity_token?: string;
+  };
 };
 
 export type UsageResponse = {
@@ -137,11 +157,12 @@ export const api = {
     }),
   getModels: () =>
     request<{ models: string[]; source: string | null; error: string | null }>("/api/studio/models"),
-  listJobs: (state?: string) =>
+  listJobs: (state?: string, signal?: AbortSignal) =>
     request<{ jobs: JobRow[]; states: string[]; running: Record<string, boolean> }>(
-      state ? `/api/jobs?state=${state}` : "/api/jobs",
+      state ? `/api/jobs?state=${encodeURIComponent(state)}` : "/api/jobs",
+      { signal },
     ),
-  getJob: (id: string) => request<JobDetail>(`/api/jobs/${id}`),
+  getJob: (id: string, signal?: AbortSignal) => request<JobDetail>(`/api/jobs/${id}`, { signal }),
   createJob: (body: { title: string; mode?: string; stop?: string }) =>
     request<{ job_id: string; mode: string; stop: string }>("/api/jobs", {
       method: "POST",

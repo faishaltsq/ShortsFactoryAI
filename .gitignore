@@ -25,6 +25,8 @@ tsconfig.tsbuildinfo
 .pytest_cache/
 .ruff_cache/
 packages/video/public/jobs/
+apps/dashboard/playwright-report/
+apps/dashboard/test-results/
 
 # Pixel Studio runtime config (operator-authored, no secrets).
 # studio-history/ sengaja TIDAK diabaikan: snapshot prompt yang sudah dikurasi
