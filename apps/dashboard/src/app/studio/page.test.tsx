@@ -41,6 +41,24 @@ beforeEach(() => {
     agent_keys: ["ScriptAgent", "ResearchAgent"],
     default_prompts: { ScriptAgent: "PROMPT DEFAULT SCRIPT", ResearchAgent: "PROMPT DEFAULT RISET" },
     runner_stops: ["research", "script", "storyboard"],
+    personas: {
+      ScriptAgent: {
+        persona: "Sang Penulis",
+        role: "Naskah 30-45 detik",
+        description: "Merangkai hook tajam.",
+        stage: "SCRIPT_GENERATED",
+        tier: "worker",
+        accent: "#fbbf24",
+      },
+      ResearchAgent: {
+        persona: "Sang Peneliti",
+        role: "Riset & sumber",
+        description: "Mengais ide dari web.",
+        stage: "IDEA_DISCOVERY",
+        tier: "worker",
+        accent: "#38bdf8",
+      },
+    },
     studio_path: "/tmp/studio.json",
     studio_exists: true,
   });

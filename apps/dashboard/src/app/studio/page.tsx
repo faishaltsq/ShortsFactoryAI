@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { api, ApiError, type HistoryEntry } from "@/lib/api";
 import { useStudio } from "@/lib/useStudio";
 import { ErrorState } from "@/components/states";
@@ -71,18 +71,47 @@ export default function StudioPage() {
         </div>
       </header>
 
-      <Section title="Agent & model" description="Override per agent. Kosongkan untuk memakai default sistem.">
+      <Section
+        title="Tim"
+        description="Tiap agent punya peran sendiri di pipeline. Override model, suhu, dan prompt per orang. Kosongkan untuk memakai default sistem."
+      >
         <div className="space-y-6">
           {s.agents.map((agent) => {
             const current = s.draft.agents[agent] ?? {};
             const def = s.meta?.default_prompts[agent] ?? "";
+            const p = s.meta?.personas?.[agent] ?? {
+              persona: agent,
+              role: "",
+              description: "",
+              stage: "",
+              tier: "worker",
+              accent: "#71717a",
+            };
             return (
               <div key={agent} className="rounded-lg border border-zinc-800 p-4">
-                <div className="mb-3 flex items-center justify-between">
-                  <h3 className="font-medium">{agent}</h3>
-                  <span className="text-xs text-zinc-500">
-                    tier default: {agent === "CreativeDirectorAgent" ? "strategist" : "worker"}
+                <div className="mb-4 flex items-start gap-4">
+                  <span
+                    className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full font-semibold text-zinc-950"
+                    style={{ backgroundColor: p.accent }}
+                    aria-hidden
+                  >
+                    {initials(p.persona || agent)}
                   </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                      <h3 className="text-base font-semibold">{p.persona || agent}</h3>
+                      <code className="text-xs text-zinc-500">{agent}</code>
+                    </div>
+                    <p className="text-sm text-zinc-300">{p.role}</p>
+                    {p.description && <p className="mt-1 text-sm text-zinc-500">{p.description}</p>}
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {p.stage && <Badge>{p.stage}</Badge>}
+                      <Badge>{p.tier}</Badge>
+                      {current.model && <Badge tone="accent">{current.model}</Badge>}
+                      {current.temperature != null && <Badge tone="accent">temp {current.temperature}</Badge>}
+                      {current.prompt && <Badge tone="accent">prompt kustom</Badge>}
+                    </div>
+                  </div>
                 </div>
                 <div className="grid gap-4 md:grid-cols-2">
                   <FieldRow
@@ -308,4 +337,26 @@ function SkeletonRows({ label }: { label: string }) {
       <div className="h-24 rounded-lg bg-zinc-900" />
     </div>
   );
+}
+
+function Badge({ children, tone = "muted" }: { children: ReactNode; tone?: "muted" | "accent" }) {
+  return (
+    <span
+      className={
+        tone === "accent"
+          ? "rounded-full border border-sky-800 bg-sky-950/50 px-2 py-0.5 text-xs text-sky-300"
+          : "rounded-full border border-zinc-800 bg-zinc-900 px-2 py-0.5 text-xs text-zinc-400"
+      }
+    >
+      {children}
+    </span>
+  );
+}
+
+/** "Sang Peneliti" → "SP", "ResearchAgent" → "RA". */
+function initials(name: string): string {
+  const parts = name.split(/[\s-]+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }

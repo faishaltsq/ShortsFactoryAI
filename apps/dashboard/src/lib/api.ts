@@ -43,8 +43,18 @@ export type StudioResponse = {
   agent_keys: string[];
   default_prompts: Record<string, string>;
   runner_stops: string[];
+  personas: Record<string, PersonaInfo>;
   studio_path: string;
   studio_exists: boolean;
+};
+
+export type PersonaInfo = {
+  persona: string;
+  role: string;
+  description: string;
+  stage: string;
+  tier: string;
+  accent: string;
 };
 
 export type HistoryEntry = { name: string; mtime: number; config: StudioPayload };
