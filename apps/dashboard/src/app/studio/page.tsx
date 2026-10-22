@@ -52,11 +52,17 @@ export default function StudioPage() {
   const applySchedule = async () => {
     setScheduleBusy(true);
     try {
+      // Apply membaca konfigurasi yang tersimpan, bukan isian form. Kalau
+      // draft masih kotor, simpan dulu supaya centang tidak terasa diabaikan.
+      if (s.dirty) {
+        const saved = await api.putStudio(s.draft);
+        s.acceptSaved(saved.saved, saved.effective);
+      }
       const next = await api.scheduleApply();
       setScheduleStatus(next);
       s.setToast({
         kind: "ok",
-        text: next.running ? "Scheduler aktif." : "Scheduler dimatikan.",
+        text: next.running ? "Setelan tersimpan dan scheduler aktif." : "Setelan tersimpan, scheduler mati.",
       });
     } catch (err) {
       s.setToast({
