@@ -1,20 +1,26 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
+import { ApiError } from "@/lib/api";
+
 const getStudio = vi.fn();
 const putStudio = vi.fn();
 const getModels = vi.fn();
 const listHistory = vi.fn();
+const rollback = vi.fn();
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
   return {
     ...actual,
     api: {
+      ...actual.api,
       getStudio: () => getStudio(),
       putStudio: (payload: unknown) => putStudio(payload),
       getModels: () => getModels(),
       listHistory: () => listHistory(),
+      rollback: (name: string) => rollback(name),
+      listJobs: vi.fn().mockResolvedValue({ jobs: [], states: [], running: {} }),
     },
   };
 });
@@ -35,6 +41,11 @@ const EFFECTIVE = {
 };
 
 beforeEach(() => {
+  vi.clearAllMocks();
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    value: vi.fn(() => ({ matches: false })),
+  });
   getStudio.mockResolvedValue({
     saved: SAVED,
     effective: EFFECTIVE,
@@ -96,5 +107,78 @@ describe("StudioPage", () => {
     await waitFor(() => expect(putStudio).toHaveBeenCalledTimes(1));
     const payload = putStudio.mock.calls[0][0] as { agents: Record<string, { temperature: number }> };
     expect(payload.agents.ScriptAgent.temperature).toBe(0.4);
+  });
+
+  it("preserves each agent draft across selections without a PUT", async () => {
+    render(<StudioPage />);
+    await screen.findByText("ScriptAgent");
+    fireEvent.change(screen.getByPlaceholderText("0.7"), { target: { value: "0.4" } });
+    fireEvent.click(screen.getByRole("button", { name: /Sang Peneliti ·/ }));
+    fireEvent.change(screen.getByPlaceholderText("0.7"), { target: { value: "0.8" } });
+    fireEvent.click(screen.getByRole("button", { name: /Sang Penulis ·/ }));
+    expect((screen.getByPlaceholderText("0.7") as HTMLInputElement).value).toBe("0.4");
+    expect(putStudio).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Simpan perubahan" }));
+    await waitFor(() => expect(putStudio).toHaveBeenCalledTimes(1));
+    expect(putStudio.mock.calls[0][0].agents).toMatchObject({
+      ScriptAgent: { temperature: 0.4 },
+      ResearchAgent: { temperature: 0.8 },
+    });
+  });
+
+  it("uses one request for 422 and keeps the edited value", async () => {
+    putStudio.mockRejectedValue(
+      new ApiError(422, "Nilai ditolak", [
+        { loc: ["body", "agents", "ScriptAgent", "temperature"], msg: "Terlalu tinggi" },
+      ]),
+    );
+    render(<StudioPage />);
+    await screen.findByText("ScriptAgent");
+    fireEvent.change(screen.getByPlaceholderText("0.7"), { target: { value: "3" } });
+    fireEvent.click(screen.getByRole("button", { name: "Simpan perubahan" }));
+    expect(await screen.findByText("Terlalu tinggi")).toBeTruthy();
+    expect(putStudio).toHaveBeenCalledTimes(1);
+    expect((screen.getByPlaceholderText("0.7") as HTMLInputElement).value).toBe("3");
+    expect(screen.getByText("Belum tersimpan")).toBeTruthy();
+  });
+
+  it("maps budget errors without dropping the section name", async () => {
+    putStudio.mockRejectedValue(
+      new ApiError(422, "Nilai ditolak", [
+        { loc: ["body", "budget", "max_daily_tokens"], msg: "Budget tidak valid" },
+      ]),
+    );
+    render(<StudioPage />);
+    await screen.findByText("ScriptAgent");
+    fireEvent.change(screen.getByLabelText(/Token harian/), { target: { value: "-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Simpan perubahan" }));
+    expect(await screen.findByText("Budget tidak valid")).toBeTruthy();
+  });
+
+  it("resets only the selected prompt", async () => {
+    render(<StudioPage />);
+    await screen.findByText("ScriptAgent");
+    fireEvent.change(screen.getByRole("textbox", { name: "System prompt" }), { target: { value: "Custom" } });
+    fireEvent.click(screen.getByRole("button", { name: "Kembalikan ke default" }));
+    expect((screen.getByRole("textbox", { name: "System prompt" }) as HTMLTextAreaElement).value).toBe("");
+    expect(putStudio).not.toHaveBeenCalled();
+  });
+
+  it("accepts rollback as the new clean baseline and updates effective values", async () => {
+    listHistory.mockResolvedValue([{ name: "studio-fixture.json", mtime: 1, config: SAVED }]);
+    const restored = { ...SAVED, production: { fps: 60 } };
+    rollback.mockResolvedValue({
+      restored,
+      effective: { ...EFFECTIVE, production: { ...EFFECTIVE.production, fps: 60 } },
+    });
+    render(<StudioPage />);
+    await screen.findByText("ScriptAgent");
+    fireEvent.click(await screen.findByRole("button", { name: "Kembalikan", exact: true }));
+    await waitFor(() => expect((screen.getByLabelText(/^FPS/) as HTMLInputElement).value).toBe("60"));
+    await waitFor(() =>
+      expect((screen.getByRole("button", { name: "Simpan perubahan" }) as HTMLButtonElement).disabled).toBe(true),
+    );
+    expect(screen.queryByText("Belum tersimpan")).toBeNull();
+    expect(rollback).toHaveBeenCalledWith("studio-fixture.json");
   });
 });

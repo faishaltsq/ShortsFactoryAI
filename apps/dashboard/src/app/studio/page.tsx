@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { api, ApiError, type HistoryEntry } from "@/lib/api";
 import { useStudio } from "@/lib/useStudio";
 import { ErrorState } from "@/components/states";
-import { FieldRow, NumberInput, PromptEditor, Section, Toast } from "@/components/studio";
+import { FieldRow, NumberInput, Section, Toast } from "@/components/studio";
+import { AgentInspector } from "@/components/pixel/AgentInspector";
+import { LiveOffice } from "@/components/pixel/LiveOffice";
 
 export default function StudioPage() {
   const s = useStudio();
@@ -44,8 +46,9 @@ export default function StudioPage() {
 
   return (
     <div className="space-y-8">
-      <header className="flex flex-wrap items-end justify-between gap-4">
+      <header className="px-page-header">
         <div>
+          <p className="px-eyebrow">KANTOR KREATIF</p>
           <h1 className="text-2xl font-semibold tracking-tight">Studio</h1>
           <p className="text-sm text-zinc-400">
             Konfigurasi orchestrator. Tersimpan di{" "}
@@ -58,115 +61,32 @@ export default function StudioPage() {
             {eff.production.tts_rate})
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           {s.dirty && <span className="text-xs font-medium text-amber-400">Belum tersimpan</span>}
           {s.savedAt && !s.dirty && <span className="text-xs text-zinc-500">Tersimpan {s.savedAt}</span>}
           <button
             onClick={() => void s.save()}
-            disabled={!s.dirty || s.saving}
-            className="rounded-md bg-sky-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
+            disabled={!s.dirty || s.saving || rollbackName !== null}
+            className="px-button"
+            data-primary="true"
           >
             {s.saving ? "Menyimpan…" : "Simpan perubahan"}
           </button>
         </div>
       </header>
 
-      <Section
-        title="Tim"
-        description="Tiap agent punya peran sendiri di pipeline. Override model, suhu, dan prompt per orang. Kosongkan untuk memakai default sistem."
-      >
-        <div className="space-y-6">
-          {s.agents.map((agent) => {
-            const current = s.draft.agents[agent] ?? {};
-            const def = s.meta?.default_prompts[agent] ?? "";
-            const p = s.meta?.personas?.[agent] ?? {
-              persona: agent,
-              role: "",
-              description: "",
-              stage: "",
-              tier: "worker",
-              accent: "#71717a",
-            };
-            return (
-              <div key={agent} className="rounded-lg border border-zinc-800 p-4">
-                <div className="mb-4 flex items-start gap-4">
-                  <span
-                    className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full font-semibold text-zinc-950"
-                    style={{ backgroundColor: p.accent }}
-                    aria-hidden
-                  >
-                    {initials(p.persona || agent)}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                      <h3 className="text-base font-semibold">{p.persona || agent}</h3>
-                      <code className="text-xs text-zinc-500">{agent}</code>
-                    </div>
-                    <p className="text-sm text-zinc-300">{p.role}</p>
-                    {p.description && <p className="mt-1 text-sm text-zinc-500">{p.description}</p>}
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {p.stage && <Badge>{p.stage}</Badge>}
-                      <Badge>{p.tier}</Badge>
-                      {current.model && <Badge tone="accent">{current.model}</Badge>}
-                      {current.temperature != null && <Badge tone="accent">temp {current.temperature}</Badge>}
-                      {current.prompt && <Badge tone="accent">prompt kustom</Badge>}
-                    </div>
-                  </div>
-                </div>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <FieldRow
-                    label="Model"
-                    hint="ID model dari router (mis. tig/deepseek-v4.1-flash)"
-                    error={s.errorFor(agent, "model")}
-                  >
-                    <input
-                      list={`models-${agent}`}
-                      value={current.model ?? ""}
-                      onChange={(e) => s.patchAgent(agent, "model", e.target.value || null)}
-                      placeholder="ikuti default provider"
-                      className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm outline-none focus:border-sky-500"
-                    />
-                    <datalist id={`models-${agent}`}>
-                      {models.map((m) => (
-                        <option key={m} value={m} />
-                      ))}
-                    </datalist>
-                  </FieldRow>
-                  <FieldRow
-                    label="Temperature (0–2)"
-                    hint={
-                      modelsError
-                        ? `Daftar model tidak tersedia: ${modelsError}`
-                        : "Kosong = temperature provider"
-                    }
-                    error={s.errorFor(agent, "temperature")}
-                  >
-                    <input
-                      type="number"
-                      min={0}
-                      max={2}
-                      step={0.1}
-                      value={current.temperature ?? ""}
-                      onChange={(e) =>
-                        s.patchAgent(agent, "temperature", e.target.value === "" ? null : Number(e.target.value))
-                      }
-                      placeholder="0.7"
-                      className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm outline-none focus:border-sky-500"
-                    />
-                  </FieldRow>
-                </div>
-                <PromptEditor
-                  value={current.prompt ?? ""}
-                  defaultValue={def}
-                  onChange={(text) => s.patchAgent(agent, "prompt", text || null)}
-                  onReset={() => s.resetAgentPrompt(agent)}
-                  error={s.errorFor(agent, "prompt")}
-                />
-              </div>
-            );
-          })}
-        </div>
-      </Section>
+      <LiveOffice
+        meta={s.meta}
+        renderInspector={(member, state) => (
+          <AgentInspector
+            member={member}
+            state={state}
+            studio={s}
+            models={models}
+            modelsError={modelsError}
+          />
+        )}
+      />
 
       <Section
         title="Budget harian"
@@ -277,10 +197,10 @@ export default function StudioPage() {
         </div>
       </Section>
 
-      <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6">
+      <section className="px-frame">
         <h2 className="text-lg font-medium">Riwayat konfigurasi</h2>
         <p className="mb-4 mt-1 text-sm text-zinc-400">
-          Setiap perubahan tersimpan otomatis. Kembalikan ke versi lama bila ada yang salah.
+          Versi dibuat saat Simpan perubahan ditekan. Kembalikan versi tersimpan bila diperlukan.
         </p>
         {history.length === 0 ? (
           <p className="text-sm text-zinc-500">Belum ada perubahan tersimpan.</p>
@@ -289,7 +209,7 @@ export default function StudioPage() {
             {history.map((entry) => (
               <li
                 key={entry.name}
-                className="flex items-center justify-between rounded-md border border-zinc-800 px-3 py-2 text-sm"
+                className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-700 py-3 text-sm"
               >
                 <span className="font-mono text-xs text-zinc-400">
                   {entry.name} · {new Date(entry.mtime * 1000).toLocaleString("id-ID")}
@@ -297,11 +217,16 @@ export default function StudioPage() {
                 <button
                   onClick={async () => {
                     if (rollbackName) return;
+                    if (
+                      s.dirty &&
+                      !window.confirm("Buang perubahan yang belum tersimpan dan kembalikan versi ini?")
+                    ) {
+                      return;
+                    }
                     setRollbackName(entry.name);
                     try {
                       const res = await api.rollback(entry.name);
-                      s.setDraft(res.restored);
-                      s.setSavedAt(new Date().toLocaleTimeString("id-ID"));
+                      s.acceptSaved(res.restored, res.effective);
                       s.setToast({ kind: "ok", text: `Konfigurasi dikembalikan ke ${entry.name}` });
                       reloadHistory();
                     } catch (err) {
@@ -313,7 +238,7 @@ export default function StudioPage() {
                       setRollbackName(null);
                     }
                   }}
-                  disabled={rollbackName !== null}
+                  disabled={rollbackName !== null || s.saving}
                   className="rounded-md border border-zinc-700 px-3 py-1 text-xs hover:bg-zinc-800 disabled:opacity-50"
                 >
                   {rollbackName === entry.name ? "Mengembalikan…" : "Kembalikan"}
@@ -337,26 +262,4 @@ function SkeletonRows({ label }: { label: string }) {
       <div className="h-24 rounded-lg bg-zinc-900" />
     </div>
   );
-}
-
-function Badge({ children, tone = "muted" }: { children: ReactNode; tone?: "muted" | "accent" }) {
-  return (
-    <span
-      className={
-        tone === "accent"
-          ? "rounded-full border border-sky-800 bg-sky-950/50 px-2 py-0.5 text-xs text-sky-300"
-          : "rounded-full border border-zinc-800 bg-zinc-900 px-2 py-0.5 text-xs text-zinc-400"
-      }
-    >
-      {children}
-    </span>
-  );
-}
-
-/** "Sang Peneliti" → "SP", "ResearchAgent" → "RA". */
-function initials(name: string): string {
-  const parts = name.split(/[\s-]+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }

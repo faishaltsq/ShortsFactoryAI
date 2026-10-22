@@ -83,37 +83,41 @@ export function useStudio() {
 
   const resetAgentPrompt = useCallback((agent: string) => patchAgent(agent, "prompt", null), [patchAgent]);
 
+  const acceptSaved = useCallback((saved: StudioPayload, nextEffective: EffectiveConfig) => {
+    setMeta((prev) => (prev ? { ...prev, saved, effective: nextEffective } : prev));
+    setDraft(saved);
+    setEffective(nextEffective);
+    setFieldErrors([]);
+    setSavedAt(new Date().toLocaleTimeString("id-ID"));
+  }, []);
+
   const save = useCallback(async () => {
     setSaving(true);
     setFieldErrors([]);
     setToast(null);
     try {
       const res = await api.putStudio(draft);
-      setMeta((prev) => (prev ? { ...prev, saved: res.saved, effective: res.effective } : prev));
-      setEffective(res.effective);
-      setDraft(res.saved);
-      setSavedAt(new Date().toLocaleTimeString("id-ID"));
+      acceptSaved(res.saved, res.effective);
       setToast({ kind: "ok", text: "Konfigurasi tersimpan dan langsung dipakai run berikutnya." });
     } catch (err) {
       if (err instanceof ApiError && err.status === 422) {
-        // Ambil detail per-field supaya input bisa menandai errornya sendiri.
-        const res = await fetch("/api/studio", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(draft),
-        });
-        const detail = (await res.json()).detail;
-        setFieldErrors(parseFieldErrors(detail));
+        // Satu request saja: detail per-field sudah ikut di error, jadi input
+        // bisa menandai errornya tanpa PUT kedua yang menggandakan efek samping.
+        setFieldErrors(parseFieldErrors(err.detail));
       }
       setToast({ kind: "error", text: err instanceof ApiError ? err.message : "Gagal menyimpan" });
     } finally {
       setSaving(false);
     }
-  }, [draft]);
+  }, [draft, acceptSaved]);
 
   const errorFor = useCallback(
     (...loc: string[]) =>
-      fieldErrors.find((f) => f.loc.slice(2).join(".") === loc.join("."))?.msg ?? null,
+      fieldErrors.find((f) => {
+        const path = f.loc[0] === "body" ? f.loc.slice(1) : f.loc;
+        const normalized = path[0] === "agents" ? path.slice(1) : path;
+        return normalized.join(".") === loc.join(".");
+      })?.msg ?? null,
     [fieldErrors],
   );
 
@@ -137,6 +141,7 @@ export function useStudio() {
     patchText,
     patchRunner,
     resetAgentPrompt,
+    acceptSaved,
     errorFor,
     agents,
     setDraft,

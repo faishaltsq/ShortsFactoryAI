@@ -2,6 +2,7 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    readonly detail: unknown = null,
   ) {
     super(message);
     this.name = "ApiError";
@@ -134,7 +135,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     }
     if (res.status === 422) {
       const first = parseFieldErrors(detail)[0];
-      throw new ApiError(422, first ? `${first.loc.slice(2).join(".")}: ${first.msg}` : "validasi gagal");
+      throw new ApiError(
+        422,
+        first ? `${first.loc.slice(1).join(".")}: ${first.msg}` : "validasi gagal",
+        detail,
+      );
     }
     throw new ApiError(res.status, typeof detail === "string" ? detail : `HTTP ${res.status}`);
   }
