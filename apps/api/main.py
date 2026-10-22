@@ -7,9 +7,11 @@ from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
+from pydantic import BaseModel, Field, field_validator
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from packages.core.approval import ApprovalRejected, approve, reject
 from packages.core.config import JOBS_DIR, get_settings
 from packages.core.orchestration import JobStore
 from packages.core.observability.hermes import HermesObserver, InvalidDelivery, ObserverDisabled
@@ -21,9 +23,49 @@ JOB_PATTERN = r"^[0-9a-f]{16}$"
 MODE_PATTERN = r"^(production|demo)$"
 RANGE_PATTERN = r"^bytes=(\d*)-(\d*)$"
 
+OPERATOR_MAX = 80
+REASON_MAX = 500
+
+
+class DecisionBody(BaseModel):
+    """Who decided. The verdict itself never travels in the request."""
+
+    operator: str = Field(min_length=1, max_length=OPERATOR_MAX)
+
+    @field_validator("operator", mode="before")
+    @classmethod
+    def _normalise_operator(cls, value: object) -> object:
+        # Stripped before the length check, not after it: a body of spaces is
+        # length 3, so validating the raw value would pass and leave "" for
+        # approval.operator_name(), which silently substitutes the default.
+        return value.strip() if isinstance(value, str) else value
+
+
+class RejectionBody(DecisionBody):
+    """A rejection must say why, or the operator re-runs the same job blind."""
+
+    reason: str = Field(min_length=1, max_length=REASON_MAX)
+
+    @field_validator("reason", mode="before")
+    @classmethod
+    def _normalise_reason(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
 
 def _csv(name: str, default: str) -> list[str]:
     return [part.strip() for part in os.environ.get(name, default).split(",") if part.strip()]
+
+
+def _canonical_host(hostname: str) -> str:
+    """Treat the two names for this machine as one origin.
+
+    The dashboard on http://localhost:3018 proxies its API calls to
+    http://127.0.0.1:8018, so a browser POST carries Origin: localhost while the
+    request itself arrives addressed to 127.0.0.1. Comparing them literally
+    refused every mutating request; both spellings name this same loopback
+    machine, while an external host still differs and is still refused.
+    """
+    return "127.0.0.1" if hostname in {"localhost", "127.0.0.1", "::1", "[::1]"} else hostname
 
 
 class SameOriginMiddleware(BaseHTTPMiddleware):
@@ -31,13 +73,14 @@ class SameOriginMiddleware(BaseHTTPMiddleware):
 
     def __init__(self, app, allowed_origins: list[str]) -> None:
         super().__init__(app)
-        self.allowed = {urlsplit(origin).hostname for origin in allowed_origins if urlsplit(origin).hostname}
+        self.allowed = {_canonical_host(urlsplit(origin).hostname)
+                        for origin in allowed_origins if urlsplit(origin).hostname}
 
     async def dispatch(self, request: Request, call_next):  # noqa: ANN201 - Starlette signature
         origin = request.headers.get("origin")
         if origin:
-            host = urlsplit(origin).hostname or ""
-            if host not in self.allowed and host != request.url.hostname:
+            host = _canonical_host(urlsplit(origin).hostname or "")
+            if host not in self.allowed and host != _canonical_host(request.url.hostname or ""):
                 return JSONResponse({"detail": "cross-origin request refused"}, status_code=403)
         return await call_next(request)
 
@@ -132,6 +175,39 @@ def create_app(store: JobStore | None = None) -> FastAPI:
         return Response(content=path.read_bytes(), status_code=200, media_type="image/png",
                         headers={"Cache-Control": "no-store",
                                  "Content-Disposition": 'inline; filename="thumbnail.png"'})
+
+    @app.post("/api/jobs/{job_id}/approve", status_code=200)
+    def approve_job(job_id: str, body: DecisionBody) -> JSONResponse:
+        """Operator decision, wired straight to the gate that verifies it.
+
+        The body carries only who decided; eligibility is re-read from disk by
+        approve(), so a browser can never assert that a job is publishable.
+        """
+        _require_job(job_id)
+        try:
+            gate = approve(job_store, job_id, operator=body.operator)
+        except ApprovalRejected as exc:
+            raise HTTPException(409, str(exc)) from exc
+        return JSONResponse({"job_id": job_id, "state": "APPROVED", "gate": gate.as_dict()})
+
+    @app.post("/api/jobs/{job_id}/reject", status_code=200)
+    def reject_job(job_id: str, body: RejectionBody) -> JSONResponse:
+        """Rejection is cheap to record and costly to fake: reason is mandatory."""
+        _require_job(job_id)
+        reason = body.reason.strip()
+        if not reason:
+            raise HTTPException(422, "reason is required")
+        try:
+            reject(job_store, job_id, reason=reason, operator=body.operator)
+        except ApprovalRejected as exc:
+            raise HTTPException(409, str(exc)) from exc
+        return JSONResponse({"job_id": job_id, "state": "REJECTED", "reason": reason})
+
+    def _require_job(job_id: str) -> None:
+        try:
+            job_store.get(job_id)
+        except KeyError as exc:
+            raise HTTPException(404, "job is unknown") from exc
 
     @app.post("/api/integrations/hermes/events")
     async def hermes_events(request: Request) -> JSONResponse:

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { AgentId, StudioHealth, StudioMode } from '../lib/contracts';
-import { StudioStream, fetchSnapshot } from '../lib/api';
+import { StudioStream, approveJob, fetchSnapshot, rejectJob } from '../lib/api';
 import { prefersEconomy } from '../lib/economy';
 import { WORKSTATIONS, canAnimate, currentRole, projectAgents, videoPath } from '../lib/selectors';
 import { initialState, studioReducer } from '../lib/state';
@@ -11,6 +11,7 @@ import { Office } from '../components/Office';
 
 const PRODUCTION_KEY = 'studio:production';
 const ECONOMY_KEY = 'studio:economy';
+const OPERATOR_KEY = 'studio:operator';
 const EMPTY_HEALTH: StudioHealth = { database: 'ok', hermes: 'not_connected', hermes_last_seen: null };
 
 export default function StudioPage() {
@@ -18,11 +19,15 @@ export default function StudioPage() {
   const [economy, setEconomy] = useState(true);
   const [logs, setLogs] = useState<string[]>([]);
   const [ready, setReady] = useState(false);
+  const [operator, setOperator] = useState('');
+  const [deciding, setDeciding] = useState(false);
+  const [decisionError, setDecisionError] = useState<string | null>(null);
   const streamRef = useRef<StudioStream | null>(null);
 
   useEffect(() => {
     const stored: StudioMode = localStorage.getItem(PRODUCTION_KEY) === 'demo' ? 'demo' : 'production';
     setEconomy(localStorage.getItem(ECONOMY_KEY) === 'off' ? false : prefersEconomy());
+    setOperator(localStorage.getItem(OPERATOR_KEY) ?? '');
     if (stored !== 'production') dispatch({ type: 'mode', mode: stored });
     setReady(true);
   }, []);
@@ -82,6 +87,9 @@ export default function StudioPage() {
   const jobs = snapshot?.jobs ?? [];
   const approval = jobs.some(job => job.approval_required);
   const previewJob = jobs.find(job => job.id === state.selectedJob) ?? jobs.find(job => job.video.available);
+  // The decision acts on whichever job is waiting, never on whatever the preview
+  // happens to be showing: those two can differ when a render is still queued.
+  const pendingJob = jobs.find(job => job.approval_required) ?? null;
   const previewSrc = previewJob?.video.available
     ? (previewJob.video.url ?? videoPath(previewJob.id, state.mode))
     : null;
@@ -103,6 +111,33 @@ export default function StudioPage() {
     const next = !economy;
     setEconomy(next);
     localStorage.setItem(ECONOMY_KEY, next ? 'on' : 'off');
+  }
+
+  async function decide(decision: 'approve' | 'reject', reason?: string) {
+    const target = pendingJob;
+    if (!target) return;
+    setDecisionError(null);
+    if (!operator.trim()) {
+      setDecisionError('Isi nama operator dulu; keputusan wajib menyebut siapa yang memutuskannya.');
+      return;
+    }
+    if (decision === 'reject' && !(reason ?? '').trim()) {
+      setDecisionError('Penolakan butuh alasan, supaya perbaikannya bisa ditindaklanjuti.');
+      return;
+    }
+    setDeciding(true);
+    try {
+      if (decision === 'approve') await approveJob(target.id, operator.trim());
+      else await rejectJob(target.id, reason!.trim(), operator.trim());
+      // The studio stream repaints on its own, but the operator wants to see the
+      // state change now rather than on the next poll.
+      const snapshot = await fetchSnapshot(state.mode);
+      dispatch({ type: 'snapshot', snapshot });
+    } catch (cause) {
+      setDecisionError(cause instanceof Error ? cause.message : 'Keputusan gagal dikirim.');
+    } finally {
+      setDeciding(false);
+    }
   }
 
   return (
@@ -131,7 +166,11 @@ export default function StudioPage() {
       </div>
 
       <Preview src={previewSrc} mode={state.mode} view={renderView} job={previewJob}
-        approval={approval} onToggleDemo={toggleMode} />
+        approval={approval} onToggleDemo={toggleMode} operator={operator} onDecide={decide}
+        deciding={deciding} decisionError={decisionError} onOperatorChange={value => {
+          setOperator(value);
+          localStorage.setItem(OPERATOR_KEY, value);
+        }} />
 
       <p className="empty">
         Mode {state.mode} menampilkan hasil nyata atau fixture lokal. Progres render berasal dari worker, bukan animasi.

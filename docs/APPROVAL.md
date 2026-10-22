@@ -2,7 +2,7 @@
 
 ## Boundaries
 
-The production pipeline stops at `READY_FOR_APPROVAL`. It never approves a job or invokes the publishing service. The dashboard/API and Hermes integration remain observation-only. Local operator commands approve or reject a job.
+The production pipeline stops at `READY_FOR_APPROVAL`. It never approves a job or invokes the publishing service. The dashboard shows that state and can submit the operator's decision, but it carries no authority of its own: `POST /api/jobs/{id}/approve` and `/reject` call the same `approval.approve()`/`approval.reject()` the CLI does, so the gate is reread from disk at the moment of the decision either way. A browser cannot assert that a job is publishable, and a request body never carries a verdict — only the operator's name, plus a mandatory reason for a rejection. The Hermes integration remains observation-only.
 
 `editorial_qc.json` and `approval.json` contain deterministic checks over the artifacts. A model-generated draft review remains a separate artifact (`draft_qc.json`). Neither the deterministic gate nor quote matching is an independent semantic fact checker.
 
@@ -37,6 +37,8 @@ uv run python scripts/approve.py --list
 uv run python scripts/approve.py --approve JOB_ID --by operator
 uv run python scripts/approve.py --reject JOB_ID --reason "Judul perlu diperbaiki" --by operator
 ```
+
+The same two decisions are available in the dashboard's Preview panel, under the video, once a job is pending. It submits `POST /api/jobs/{id}/approve` and `/reject` through the local API; `tests/test_studio_decisions.py` covers those routes, including the stale-verdict refusal and the cross-origin refusal.
 
 `--live` uses configured live providers; it is not required to test the local fixture workflow. The `--stop editorial` command stops after deterministic editorial QC rather than creating approval eligibility.
 

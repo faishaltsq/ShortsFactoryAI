@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import type { AgentId, AgentView, Connection, JobView, StudioEvent, StudioHealth, StudioMode } from '../lib/contracts';
 import { STATUS_LABEL, STATUS_TONE } from '../lib/economy';
 
@@ -159,10 +160,15 @@ export function Pipeline({ groups, jobs }: {
   );
 }
 
-export function Preview({ src, mode, view, job, approval, onToggleDemo }: {
+export function Preview({ src, mode, view, job, approval, onToggleDemo,
+  operator, onDecide, deciding, decisionError, onOperatorChange }: {
   src: string | null; mode: StudioMode; view?: AgentView; job?: JobView; approval: boolean;
-  onToggleDemo(): void;
+  onToggleDemo(): void; operator: string; onDecide(decision: 'approve' | 'reject', reason?: string): void;
+  deciding: boolean; decisionError: string | null; onOperatorChange(value: string): void;
 }) {
+  const [rejected, setRejected] = useState(false);
+  const [reason, setReason] = useState('');
+  const canDecide = Boolean(job?.approval_required) && !deciding;
   return (
     <section className="panel preview" aria-label="Preview render">
       <div className="panel__head">
@@ -211,6 +217,53 @@ export function Preview({ src, mode, view, job, approval, onToggleDemo }: {
           <span className="meta">Tidak ada job dipilih pada mode ini.</span>
         )}
       </div>
+      <div className="decision" data-testid="approval-controls">
+        <div className="decision__row">
+          <label className="decision__label" htmlFor="operator-name">Operator</label>
+          <input id="operator-name" className="decision__input" value={operator} maxLength={80}
+            data-testid="operator-name"
+            onChange={event => onOperatorChange(event.target.value)} placeholder="siapa yang memutuskan"
+            aria-label="Nama operator" />
+        </div>
+
+        {canDecide ? (
+          <>
+            {rejected ? (
+              <div className="decision__row">
+                <label className="decision__label" htmlFor="reject-reason">Alasan</label>
+                <textarea id="reject-reason" className="decision__input decision__input--reason" value={reason}
+                  maxLength={500} onChange={event => setReason(event.target.value)} rows={2}
+                  placeholder="wajib: apa yang harus diperbaiki" aria-label="Alasan penolakan" />
+              </div>
+            ) : null}
+            <div className="decision__actions">
+              {rejected ? (
+                <>
+                  <button className="pill pill--btn" data-testid="reject-confirm" disabled={deciding}
+                    onClick={() => onDecide('reject', reason)}>Kirim penolakan</button>
+                  <button className="pill pill--btn" disabled={deciding}
+                    onClick={() => { setRejected(false); setReason(''); }}>Batal</button>
+                </>
+              ) : (
+                <>
+                  <button className="pill pill--btn pill--ok" data-testid="approve" disabled={deciding}
+                    onClick={() => onDecide('approve')}>Setujui</button>
+                  <button className="pill pill--btn" data-testid="reject" disabled={deciding}
+                    onClick={() => setRejected(true)}>Tolak</button>
+                </>
+              )}
+            </div>
+          </>
+        ) : (
+          <p className="empty">Tidak ada job yang menunggu keputusan pada mode ini.</p>
+        )}
+
+        {decisionError ? (
+          <p className="decision__error" role="alert" data-testid="decision-error">{decisionError}</p>
+        ) : null}
+        {deciding ? <p className="meta">Mengirim keputusan…</p> : null}
+      </div>
+
       <div className="preview__meta">
         <span><Dot value={approval ? 'amber' : 'muted'} />
           Approval: {approval ? 'menunggu operator' : 'tidak ada'}</span>

@@ -113,11 +113,12 @@ button { font: inherit; color: inherit; }
 .preview {
   display: grid; column-gap: 14px;
   grid-template-columns: minmax(0, 300px) minmax(0, 1fr);
-  grid-template-areas: "head head" "frame job" "frame meta" "foot foot";
+  grid-template-areas: "head head" "frame job" "frame decision" "frame meta" "foot foot";
 }
 .preview > .panel__head { grid-area: head; }
 .preview > .frame { grid-area: frame; max-height: 380px; margin: 0; }
 .preview > .preview__job { grid-area: job; align-self: start; }
+.preview > .decision { grid-area: decision; align-self: start; }
 .preview > .preview__meta { grid-area: meta; align-self: start; padding-top: 8px; }
 .preview > .empty { grid-area: foot; }
 .frame { aspect-ratio: 9 / 16; background: var(--raised); border: 1px solid var(--border); border-radius: 4px; display: grid; place-items: center; overflow: hidden; }
@@ -129,6 +130,20 @@ button { font: inherit; color: inherit; }
 .meta--thumb { display: flex; align-items: center; gap: 6px; }
 .meta--thumb .thumb { width: 27px; height: 48px; object-fit: cover; border: 1px solid var(--border); border-radius: 3px; background: var(--raised); }
 .meta--blockers { color: var(--amber, #e8bf7b); }
+
+.decision { display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+.decision__row { display: flex; align-items: center; gap: 6px; }
+.decision__label { color: var(--muted); min-width: 56px; }
+.decision__input {
+  flex: 1; min-width: 0; background: var(--raised); color: var(--text);
+  border: 1px solid var(--border); border-radius: 3px; padding: 4px 6px; font-size: 12px;
+}
+.decision__input:focus { outline: none; border-color: var(--teal); }
+.decision__input--reason { resize: vertical; font-family: inherit; }
+.decision__actions { display: flex; gap: 6px; }
+.decision__error { color: var(--red, #ef9d99); }
+.pill--ok { border-color: var(--teal); color: var(--teal); }
+.pill--btn:disabled { opacity: .5; cursor: wait; }
 
 body.economy .figure--work, body.economy .stage__bar i { animation: none !important; transition: none !important; }
 @media (prefers-reduced-motion: reduce) {

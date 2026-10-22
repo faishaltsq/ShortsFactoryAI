@@ -81,3 +81,32 @@ export async function fetchSnapshot(mode: string): Promise<StudioSnapshot> {
   if (!response.ok) throw new Error(`Snapshot unavailable (${response.status})`);
   return (await response.json()) as StudioSnapshot;
 }
+
+/** Thrown when the studio refuses a decision, carrying the API's own wording. */
+export class DecisionRefused extends Error {
+  constructor(readonly status: number, message: string) { super(message); }
+}
+
+async function post<T>(path: string, body: object): Promise<T> {
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    // FastAPI puts the reason in { detail }; fall back to the status so a
+    // refused decision still reads as something specific in the panel.
+    const detail = (await response.json().catch(() => null))?.detail;
+    throw new DecisionRefused(response.status,
+      typeof detail === 'string' ? detail : `Permintaan ditolak (${response.status})`);
+  }
+  return (await response.json()) as T;
+}
+
+export function approveJob(jobId: string, operator: string): Promise<{ state: string }> {
+  return post(`/api/jobs/${jobId}/approve`, { operator });
+}
+
+export function rejectJob(jobId: string, reason: string, operator: string): Promise<{ state: string }> {
+  return post(`/api/jobs/${jobId}/reject`, { operator, reason });
+}
