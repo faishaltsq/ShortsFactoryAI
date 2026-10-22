@@ -13,6 +13,7 @@ import re
 import time
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -79,6 +80,52 @@ class RunnerOverride(BaseModel):
         return value
 
 
+class ProviderOverride(BaseModel):
+    """Setelan provider yang boleh diedit operator lewat web.
+
+    Tidak ada field rahasia di sini dengan sengaja: API key tetap di environment
+    dan hanya dikirim ke endpoint yang cocok (lihat config._resolve_key). Yang
+    bisa diubah dari UI hanya hal non-rahasia yang memang sering berganti.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool | None = None
+    base_url: str | None = Field(None, min_length=1, max_length=500)
+    model: str | None = Field(None, min_length=1, max_length=200)
+    temperature: float | None = Field(None, ge=0.0, le=2.0)
+
+    @field_validator("base_url")
+    @classmethod
+    def _plain_http_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        parts = urlsplit(value.strip())
+        if parts.scheme not in {"http", "https"} or not parts.hostname:
+            raise ValueError("base_url harus berbentuk http(s)://host[/path]")
+        if parts.username or parts.password:
+            # Kredensial di URL akan lolos ke log dan ke pesan error. Tolak.
+            raise ValueError("base_url tidak boleh memuat kredensial")
+        return value.strip().rstrip("/")
+
+
+class CliProviderOverride(BaseModel):
+    """CLI tidak punya endpoint maupun temperature: hanya hidup/mati dan model."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool | None = None
+    model: str | None = Field(None, min_length=1, max_length=200)
+
+
+class ProvidersOverride(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    worker: ProviderOverride = Field(default_factory=ProviderOverride)
+    strategist_cli: CliProviderOverride = Field(default_factory=CliProviderOverride)
+    strategist_http: ProviderOverride = Field(default_factory=ProviderOverride)
+
+
 class StudioConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -86,6 +133,7 @@ class StudioConfig(BaseModel):
     agents: dict[str, AgentOverride] = Field(default_factory=dict)
     budget: BudgetOverride = Field(default_factory=BudgetOverride)
     production: ProductionOverride = Field(default_factory=ProductionOverride)
+    providers: ProvidersOverride = Field(default_factory=ProvidersOverride)
     runner: RunnerOverride = Field(default_factory=RunnerOverride)
 
     @field_validator("agents")

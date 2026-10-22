@@ -320,8 +320,65 @@ def providers(authorization: str | None = Depends(require_token)) -> dict[str, A
     settings = get_settings()
     router = build_router(settings, db_path=settings.db_path)
     health_report = router.refresh_health()
-    return {"health": [{"ref": ref, "healthy": bool(info["healthy"]), "model": info["model"]}
-                       for ref, info in health_report.items()],
-            "mode": {"worker_base_url": settings.deepseek.base_url or None,
-                     "worker_configured": settings.deepseek.configured,
-                     "strategist_model": settings.claude_cli.model}}
+    saved = _studio_or_409()
+    return {
+        "health": [{"ref": ref, "healthy": bool(info["healthy"]), "model": info["model"]}
+                   for ref, info in health_report.items()],
+        "mode": {"worker_base_url": settings.deepseek.base_url or None,
+                 "worker_configured": settings.deepseek.configured,
+                 "strategist_model": settings.claude_cli.model},
+        # Setelan yang bisa diedit operator. Tidak ada nilai rahasia di sini:
+        # hanya apakah sebuah kunci tersedia, bukan isinya.
+        "editable": {
+            "worker": {
+                "enabled": saved.providers.worker.enabled,
+                "base_url": saved.providers.worker.base_url,
+                "model": saved.providers.worker.model,
+                "temperature": saved.providers.worker.temperature,
+                "effective_base_url": settings.deepseek.base_url or None,
+                "effective_model": settings.deepseek.model or None,
+                "has_key": bool(settings.deepseek.api_key),
+                "configured": settings.deepseek.configured,
+            },
+            "strategist_cli": {
+                "enabled": saved.providers.strategist_cli.enabled,
+                "model": saved.providers.strategist_cli.model,
+                "effective_model": settings.claude_cli.model,
+                "binary": settings.claude_cli.binary,
+            },
+            "strategist_http": {
+                "enabled": saved.providers.strategist_http.enabled,
+                "base_url": saved.providers.strategist_http.base_url,
+                "model": saved.providers.strategist_http.model,
+                "temperature": saved.providers.strategist_http.temperature,
+                "effective_base_url": settings.strategist.base_url or None,
+                "effective_model": settings.strategist.model or None,
+                "has_key": bool(settings.strategist.api_key),
+                "configured": settings.strategist.configured,
+            },
+        },
+    }
+
+
+@app.get("/api/providers/models")
+def provider_models(
+    target: str = Query(default="worker", pattern="^(worker|strategist_http)$"),
+    authorization: str | None = Depends(require_token),
+) -> dict[str, Any]:
+    """Katalog model dari endpoint provider yang sedang aktif.
+
+    Dibaca dari endpoint efektif (bukan dari yang tersimpan) supaya operator bisa
+    memeriksa hasil perubahan sebelum menyimpannya.
+    """
+    settings = get_settings()
+    conf = settings.deepseek if target == "worker" else settings.strategist
+    if not conf.base_url:
+        return {"models": [], "source": None, "error": "base_url belum dikonfigurasi"}
+    headers = {"Authorization": f"Bearer {conf.api_key}"} if conf.api_key else {}
+    try:
+        resp = httpx.get(f"{conf.base_url.rstrip('/')}/models", headers=headers, timeout=8.0)
+        resp.raise_for_status()
+        models = sorted({str(item.get("id")) for item in resp.json().get("data", []) if item.get("id")})
+        return {"models": models, "source": conf.base_url, "error": None}
+    except (httpx.HTTPError, ValueError) as exc:
+        return {"models": [], "source": conf.base_url, "error": f"{type(exc).__name__}: {exc}"}

@@ -31,6 +31,12 @@ export type StudioPayload = {
     tts_voice?: string | null;
     tts_rate?: string | null;
   };
+  /** Setelan provider non-rahasia. Absen pada payload API lama. */
+  providers?: {
+    worker?: ProviderField;
+    strategist_cli?: Pick<ProviderField, "enabled" | "model">;
+    strategist_http?: ProviderField;
+  };
   runner: { default_mode: "mock" | "live"; default_stop: string };
 };
 
@@ -110,10 +116,33 @@ export type UsageResponse = {
   by_agent: Record<string, string | number>[];
 };
 
+export type ProviderField = {
+  enabled?: boolean | null;
+  base_url?: string | null;
+  model?: string | null;
+  temperature?: number | null;
+};
+
+export type EditableProvider = ProviderField & {
+  effective_base_url?: string | null;
+  effective_model?: string | null;
+  has_key?: boolean;
+  configured?: boolean;
+  binary?: string;
+};
+
 export type ProvidersResponse = {
   health: { ref: string; healthy: boolean; model: string }[];
   mode: Record<string, unknown>;
+  /** Setelan yang bisa diedit. Absen pada API lama. */
+  editable?: {
+    worker: EditableProvider;
+    strategist_cli: EditableProvider;
+    strategist_http: EditableProvider;
+  };
 };
+
+export type ModelCatalog = { models: string[]; source: string | null; error: string | null };
 
 export type FieldError = { loc: (string | number)[]; msg: string };
 
@@ -185,4 +214,6 @@ export const api = {
   getArtifact: <T,>(id: string, name: string) => request<T>(`/api/jobs/${id}/artifact/${name}`),
   usage: () => request<UsageResponse>("/api/usage/today"),
   providers: () => request<ProvidersResponse>("/api/providers"),
+  providerModels: (target: "worker" | "strategist_http") =>
+    request<ModelCatalog>(`/api/providers/models?target=${target}`),
 };

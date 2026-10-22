@@ -113,22 +113,69 @@ def _strategist_key() -> str:
     return ""
 
 
+def _prov(section: str, key: str, fallback):
+    """Override provider dari studio.json, kalau ada. Non-rahasia saja."""
+    cfg = _studio()
+    if cfg is None:
+        return fallback
+    group = getattr(cfg.providers, section, None)
+    if group is None:
+        return fallback
+    value = getattr(group, key, None)
+    return fallback if value is None else value
+
+
+def _key_for(env_prefix: str, base_url: str) -> str:
+    """Pilih API key untuk sebuah base_url.
+
+    Kunci dari env hanya dipakai kalau host tujuannya masih sama dengan host yang
+    terdaftar di env. Tanpa ini, siapa pun yang bisa menekan Simpan di UI bisa
+    mengarahkan base_url ke host lain dan membuat kunci asli ikut terkirim.
+    """
+    if not base_url:
+        return ""
+    explicit = os.environ.get(f"{env_prefix}_API_KEY", "")
+    configured = os.environ.get(f"{env_prefix}_BASE_URL", "")
+    if configured:
+        target, origin = urlsplit(base_url), urlsplit(configured)
+        if (target.scheme, target.hostname, target.port) != (origin.scheme, origin.hostname, origin.port):
+            return ""
+    if explicit:
+        return explicit
+    # Router lokal memakai kunci milik Hermes. Hanya untuk origin yang persis itu.
+    target = urlsplit(base_url)
+    if target.scheme == "http" and target.hostname == "localhost" and target.port == 20128 \
+            and not target.username and not target.password:
+        return os.environ.get("HERMES_CUSTOM_LOCALHOST_20128_API_KEY", "")
+    return ""
+
+
+def _deepseek_key() -> str:
+    return _key_for("DEEPSEEK", os.environ.get("DEEPSEEK_BASE_URL", ""))
+
+
+def _strategist_key() -> str:
+    return _key_for("STRATEGIST", os.environ.get("STRATEGIST_BASE_URL", ""))
+
+
 @dataclass(frozen=True)
 class DeepSeekConfig:
-    base_url: str = field(default_factory=lambda: os.environ.get("DEEPSEEK_BASE_URL", ""))
-    api_key: str = field(default_factory=_deepseek_key, repr=False)
-    model: str = field(default_factory=lambda: os.environ.get("DEEPSEEK_MODEL", ""))
+    base_url: str = field(default_factory=lambda: _prov("worker", "base_url", os.environ.get("DEEPSEEK_BASE_URL", "")))
+    api_key: str = field(default_factory=lambda: _key_for("DEEPSEEK", _prov("worker", "base_url", os.environ.get("DEEPSEEK_BASE_URL", ""))), repr=False)
+    model: str = field(default_factory=lambda: _prov("worker", "model", os.environ.get("DEEPSEEK_MODEL", "")))
+    enabled: bool = field(default_factory=lambda: bool(_prov("worker", "enabled", True)))
 
     @property
     def configured(self) -> bool:
-        return bool(self.base_url and self.model)
+        return bool(self.enabled and self.base_url and self.model)
 
 
 @dataclass(frozen=True)
 class ClaudeCliConfig:
     binary: str = field(default_factory=lambda: os.environ.get("CLAUDE_CLI_BIN", "claude"))
-    model: str = field(default_factory=lambda: os.environ.get("CLAUDE_CLI_MODEL", "opus"))
+    model: str = field(default_factory=lambda: _prov("strategist_cli", "model", os.environ.get("CLAUDE_CLI_MODEL", "opus")))
     timeout_s: int = field(default_factory=lambda: _int("CLAUDE_CLI_TIMEOUT_S", 300))
+    enabled: bool = field(default_factory=lambda: bool(_prov("strategist_cli", "enabled", True)))
 
 
 @dataclass(frozen=True)
@@ -140,13 +187,14 @@ class StrategistConfig:
     jalur kedua yang hidup selama gateway-nya hidup.
     """
 
-    base_url: str = field(default_factory=lambda: os.environ.get("STRATEGIST_BASE_URL", ""))
-    api_key: str = field(default_factory=_strategist_key, repr=False)
-    model: str = field(default_factory=lambda: os.environ.get("STRATEGIST_MODEL", ""))
+    base_url: str = field(default_factory=lambda: _prov("strategist_http", "base_url", os.environ.get("STRATEGIST_BASE_URL", "")))
+    api_key: str = field(default_factory=lambda: _key_for("STRATEGIST", _prov("strategist_http", "base_url", os.environ.get("STRATEGIST_BASE_URL", ""))), repr=False)
+    model: str = field(default_factory=lambda: _prov("strategist_http", "model", os.environ.get("STRATEGIST_MODEL", "")))
+    enabled: bool = field(default_factory=lambda: bool(_prov("strategist_http", "enabled", True)))
 
     @property
     def configured(self) -> bool:
-        return bool(self.base_url and self.model)
+        return bool(self.enabled and self.base_url and self.model)
 
 
 @dataclass(frozen=True)

@@ -238,6 +238,17 @@ class ProviderRouter:
         raise ProviderError("all providers failed: " + "; ".join(errors), provider="router")
 
 
+def _prov_temperature(section: str) -> float:
+    """Temperature default provider dari studio.json, bila operator mengubahnya."""
+    try:
+        cfg = load_studio()
+    except StudioConfigError:
+        return 0.7
+    group = getattr(cfg.providers, section, None)
+    value = getattr(group, "temperature", None) if group is not None else None
+    return 0.7 if value is None else float(value)
+
+
 def build_router(settings: Settings | None = None, *, job_id: str | None = None, db_path: Path | None = None, mock_only: bool = False) -> ProviderRouter:
     settings = settings or get_settings()
     tracker = UsageTracker(db_path or settings.db_path)
@@ -254,18 +265,21 @@ def build_router(settings: Settings | None = None, *, job_id: str | None = None,
                 model=settings.deepseek.model,
                 tier="worker",
                 timeout_s=settings.budget.request_timeout_s,
+                temperature=_prov_temperature("worker"),
             )
         )
     worker_chain.append(MockProvider())
 
-    strategist_chain: list[Provider] = [
-        ClaudeCliProvider(
-            binary=settings.claude_cli.binary,
-            model=settings.claude_cli.model,
-            tier="strategist",
-            timeout_s=settings.claude_cli.timeout_s,
-        ),
-    ]
+    strategist_chain: list[Provider] = []
+    if settings.claude_cli.enabled:
+        strategist_chain.append(
+            ClaudeCliProvider(
+                binary=settings.claude_cli.binary,
+                model=settings.claude_cli.model,
+                tier="strategist",
+                timeout_s=settings.claude_cli.timeout_s,
+            )
+        )
     # Jalan kedua: CLI bisa mati total kalau model upstream-nya nonaktif, dan
     # tier strategist tidak punya provider lain. Urutannya setelah CLI supaya
     # kualitas review tetap dari CLI saat tersedia.
@@ -278,6 +292,7 @@ def build_router(settings: Settings | None = None, *, job_id: str | None = None,
                 model=settings.strategist.model,
                 tier="strategist",
                 timeout_s=settings.budget.request_timeout_s,
+                temperature=_prov_temperature("strategist_http"),
             )
         )
     strategist_chain.append(MockProvider())
