@@ -338,6 +338,7 @@ def providers(authorization: str | None = Depends(require_token)) -> dict[str, A
                 "effective_base_url": settings.deepseek.base_url or None,
                 "effective_model": settings.deepseek.model or None,
                 "has_key": bool(settings.deepseek.api_key),
+                "key_origin_mismatch": settings.deepseek.key_origin_mismatch,
                 "configured": settings.deepseek.configured,
             },
             "strategist_cli": {
@@ -354,6 +355,7 @@ def providers(authorization: str | None = Depends(require_token)) -> dict[str, A
                 "effective_base_url": settings.strategist.base_url or None,
                 "effective_model": settings.strategist.model or None,
                 "has_key": bool(settings.strategist.api_key),
+                "key_origin_mismatch": settings.strategist.key_origin_mismatch,
                 "configured": settings.strategist.configured,
             },
         },

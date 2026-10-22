@@ -58,7 +58,35 @@ def test_kunci_tidak_ikut_pindah_host(tmp_path, monkeypatch):
         worker=ProviderOverride(base_url="https://attacker.example.net/v1")
     )))
     get_settings.cache_clear()
-    assert get_settings().deepseek.api_key == ""
+    settings = get_settings()
+    assert settings.deepseek.api_key == ""
+    # Mismatch harus terlihat, bukan senyap: provider tampak sehat lalu gagal 401.
+    assert settings.deepseek.key_origin_mismatch is True
+
+
+def test_host_sama_tidak_dianggap_mismatch(tmp_path, monkeypatch):
+    _isolate(tmp_path, monkeypatch)
+    monkeypatch.setenv("DEEPSEEK_BASE_URL", "https://env.example.com/v1")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "kunci-asli")
+    save_studio(StudioConfig(providers=ProvidersOverride(
+        worker=ProviderOverride(base_url="https://env.example.com/v2")
+    )))
+    get_settings.cache_clear()
+    assert get_settings().deepseek.key_origin_mismatch is False
+
+
+def test_localhost_dan_127_0_0_1_dianggap_beda_origin(tmp_path, monkeypatch):
+    """Ini kasus nyata: .env pakai localhost, operator mengetik 127.0.0.1."""
+    _isolate(tmp_path, monkeypatch)
+    monkeypatch.setenv("DEEPSEEK_BASE_URL", "http://localhost:20128/v1")
+    monkeypatch.setenv("HERMES_CUSTOM_LOCALHOST_20128_API_KEY", "kunci-router")
+    save_studio(StudioConfig(providers=ProvidersOverride(
+        worker=ProviderOverride(base_url="http://127.0.0.1:20128/v1")
+    )))
+    get_settings.cache_clear()
+    settings = get_settings()
+    assert settings.deepseek.api_key == ""
+    assert settings.deepseek.key_origin_mismatch is True
 
 
 def test_kunci_tetap_dipakai_saat_host_sama(tmp_path, monkeypatch):

@@ -127,6 +127,8 @@ export type EditableProvider = ProviderField & {
   effective_base_url?: string | null;
   effective_model?: string | null;
   has_key?: boolean;
+  /** base_url diarahkan ke origin lain, jadi kunci env sengaja tidak dikirim. */
+  key_origin_mismatch?: boolean;
   configured?: boolean;
   binary?: string;
 };

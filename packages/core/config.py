@@ -125,29 +125,41 @@ def _prov(section: str, key: str, fallback):
     return fallback if value is None else value
 
 
-def _key_for(env_prefix: str, base_url: str) -> str:
-    """Pilih API key untuk sebuah base_url.
+def _key_status(env_prefix: str, base_url: str) -> tuple[str, bool]:
+    """(api_key, origin_mismatch) untuk sebuah base_url.
 
     Kunci dari env hanya dipakai kalau host tujuannya masih sama dengan host yang
     terdaftar di env. Tanpa ini, siapa pun yang bisa menekan Simpan di UI bisa
     mengarahkan base_url ke host lain dan membuat kunci asli ikut terkirim.
+
+    Mismatch dikembalikan terpisah, bukan sekadar menghasilkan kunci kosong:
+    kunci kosong yang senyap membuat provider tampak sehat (katalog model tidak
+    butuh auth) lalu gagal 401 saat benar-benar dipanggil.
     """
     if not base_url:
-        return ""
+        return "", False
     explicit = os.environ.get(f"{env_prefix}_API_KEY", "")
     configured = os.environ.get(f"{env_prefix}_BASE_URL", "")
     if configured:
         target, origin = urlsplit(base_url), urlsplit(configured)
         if (target.scheme, target.hostname, target.port) != (origin.scheme, origin.hostname, origin.port):
-            return ""
+            return "", True
     if explicit:
-        return explicit
+        return explicit, False
     # Router lokal memakai kunci milik Hermes. Hanya untuk origin yang persis itu.
     target = urlsplit(base_url)
     if target.scheme == "http" and target.hostname == "localhost" and target.port == 20128 \
             and not target.username and not target.password:
-        return os.environ.get("HERMES_CUSTOM_LOCALHOST_20128_API_KEY", "")
-    return ""
+        return os.environ.get("HERMES_CUSTOM_LOCALHOST_20128_API_KEY", ""), False
+    return "", False
+
+
+def _key_for(env_prefix: str, base_url: str) -> str:
+    return _key_status(env_prefix, base_url)[0]
+
+
+def _key_mismatch(env_prefix: str, base_url: str) -> bool:
+    return _key_status(env_prefix, base_url)[1]
 
 
 def _deepseek_key() -> str:
@@ -164,6 +176,9 @@ class DeepSeekConfig:
     api_key: str = field(default_factory=lambda: _key_for("DEEPSEEK", _prov("worker", "base_url", os.environ.get("DEEPSEEK_BASE_URL", ""))), repr=False)
     model: str = field(default_factory=lambda: _prov("worker", "model", os.environ.get("DEEPSEEK_MODEL", "")))
     enabled: bool = field(default_factory=lambda: bool(_prov("worker", "enabled", True)))
+    key_origin_mismatch: bool = field(
+        default_factory=lambda: _key_mismatch("DEEPSEEK", _prov("worker", "base_url", os.environ.get("DEEPSEEK_BASE_URL", "")))
+    )
 
     @property
     def configured(self) -> bool:
@@ -191,6 +206,9 @@ class StrategistConfig:
     api_key: str = field(default_factory=lambda: _key_for("STRATEGIST", _prov("strategist_http", "base_url", os.environ.get("STRATEGIST_BASE_URL", ""))), repr=False)
     model: str = field(default_factory=lambda: _prov("strategist_http", "model", os.environ.get("STRATEGIST_MODEL", "")))
     enabled: bool = field(default_factory=lambda: bool(_prov("strategist_http", "enabled", True)))
+    key_origin_mismatch: bool = field(
+        default_factory=lambda: _key_mismatch("STRATEGIST", _prov("strategist_http", "base_url", os.environ.get("STRATEGIST_BASE_URL", "")))
+    )
 
     @property
     def configured(self) -> bool:

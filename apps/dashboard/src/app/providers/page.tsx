@@ -377,6 +377,18 @@ function ProviderCard({
         </p>
       )}
 
+      {editable.key_origin_mismatch && (
+        <p
+          className="rounded-md border border-amber-700 bg-amber-950 px-3 py-2 text-xs text-amber-100"
+          role="alert"
+        >
+          Base URL ini beda origin dengan yang terdaftar di <code>.env</code>, jadi API key sengaja
+          tidak dikirim. Katalog model tetap terbaca (tidak butuh auth) tapi panggilan akan gagal
+          401. Pakai host yang persis sama dengan <code>.env</code>, mis.{" "}
+          <code>http://localhost:20128/v1</code> — bukan <code>127.0.0.1</code>.
+        </p>
+      )}
+
       {modelsError && <p className="text-xs text-amber-400">Katalog model tidak tersedia: {modelsError}</p>}
     </div>
   );
