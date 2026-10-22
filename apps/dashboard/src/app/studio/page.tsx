@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, ApiError, type HistoryEntry } from "@/lib/api";
+import { api, ApiError, type HistoryEntry, type ScheduleStatus } from "@/lib/api";
 import { useStudio } from "@/lib/useStudio";
 import { ErrorState } from "@/components/states";
 import { FieldRow, NumberInput, Section, Toast } from "@/components/studio";
@@ -14,6 +14,59 @@ export default function StudioPage() {
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [rollbackName, setRollbackName] = useState<string | null>(null);
+  const [scheduleStatus, setScheduleStatus] = useState<ScheduleStatus | null>(null);
+  const [scheduleBusy, setScheduleBusy] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    api
+      .schedule()
+      .then((r) => alive && setScheduleStatus(r))
+      .catch(() => alive && setScheduleStatus(null));
+    return () => {
+      alive = false;
+    };
+  }, [s.savedAt]);
+
+  const runTick = async () => {
+    setScheduleBusy(true);
+    try {
+      const plan = await api.scheduleTick();
+      s.setToast({
+        kind: plan.due ? "ok" : "error",
+        text: plan.due
+          ? `Jatuh tempo — job dibuat${plan.title ? `: ${plan.title}` : ""}`
+          : `Belum waktunya: ${plan.reason}`,
+      });
+      setScheduleStatus(await api.schedule());
+    } catch (err) {
+      s.setToast({
+        kind: "error",
+        text: err instanceof ApiError ? err.message : "Gagal memeriksa jadwal",
+      });
+    } finally {
+      setScheduleBusy(false);
+    }
+  };
+
+  const applySchedule = async () => {
+    setScheduleBusy(true);
+    try {
+      const next = await api.scheduleApply();
+      setScheduleStatus(next);
+      s.setToast({
+        kind: "ok",
+        text: next.running ? "Scheduler aktif." : "Scheduler dimatikan.",
+      });
+    } catch (err) {
+      s.setToast({
+        kind: "error",
+        text: err instanceof ApiError ? err.message : "Gagal menerapkan jadwal",
+      });
+    } finally {
+      setScheduleBusy(false);
+    }
+  };
 
   useEffect(() => {
     let alive = true;
@@ -211,6 +264,110 @@ export default function StudioPage() {
         </div>
       </Section>
 
+      <Section
+        title="Jadwal otomatis"
+        description="Buat video sendiri secara berkala. Mati secara default — nyalakan hanya kalau kamu siap menerima job tanpa menekan tombol."
+      >
+        <label className="mb-4 flex items-start gap-3 text-sm">
+          <input
+            type="checkbox"
+            checked={s.draft.schedule?.enabled === true}
+            onChange={(e) => s.patchSection("schedule", "enabled", e.target.checked)}
+            className="mt-0.5 h-4 w-4 shrink-0 rounded border-zinc-600 bg-zinc-900 accent-sky-500"
+          />
+          <span>
+            <span className="font-medium text-zinc-200">Aktifkan scheduler</span>
+            <span className="block text-xs text-zinc-400">
+              Berjalan selama API hidup. Satu job pada satu waktu, dan judul yang sudah dipakai
+              tidak diulang.
+            </span>
+          </span>
+        </label>
+
+        <div className="grid gap-4 md:grid-cols-3">
+          <NumberInput
+            label="Interval (jam)"
+            value={s.draft.schedule?.interval_hours ?? ""}
+            placeholder="24"
+            error={s.errorFor("schedule", "interval_hours")}
+            onChange={(v) => s.patchSection("schedule", "interval_hours", v)}
+          />
+          <NumberInput
+            label="Maksimal per hari"
+            value={s.draft.schedule?.max_per_day ?? ""}
+            placeholder="1"
+            error={s.errorFor("schedule", "max_per_day")}
+            onChange={(v) => s.patchSection("schedule", "max_per_day", v)}
+          />
+          <NumberInput
+            label="Jeda antar-job (menit)"
+            value={s.draft.schedule?.gap_minutes ?? ""}
+            placeholder="0"
+            error={s.errorFor("schedule", "gap_minutes")}
+            onChange={(v) => s.patchSection("schedule", "gap_minutes", v)}
+          />
+        </div>
+
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <FieldRow label="Mode job otomatis">
+            <select
+              value={s.draft.schedule?.mode ?? "live"}
+              onChange={(e) => s.patchSection("schedule", "mode", e.target.value)}
+              className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm outline-none focus:border-sky-500"
+            >
+              <option value="live">live (model asli, ada biaya)</option>
+              <option value="mock">mock (tanpa biaya, fixture)</option>
+            </select>
+          </FieldRow>
+          <FieldRow label="Berhenti di stage">
+            <select
+              value={s.draft.schedule?.stop ?? "render"}
+              onChange={(e) => s.patchSection("schedule", "stop", e.target.value)}
+              className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm outline-none focus:border-sky-500"
+            >
+              {(s.meta?.runner_stops ?? []).map((stop) => (
+                <option key={stop} value={stop}>
+                  {stop}
+                </option>
+              ))}
+            </select>
+          </FieldRow>
+        </div>
+
+        <div className="mt-4">
+          <FieldRow
+            label="Daftar topik"
+            hint="Satu topik per baris. Diputar bergantian; yang sudah dipakai dilewati."
+            error={s.errorFor("schedule", "topics")}
+          >
+            <textarea
+              rows={5}
+              value={(s.draft.schedule?.topics ?? []).join("\n")}
+              onChange={(e) =>
+                s.patchSection(
+                  "schedule",
+                  "topics",
+                  e.target.value
+                    .split("\n")
+                    .map((t) => t.trim())
+                    .filter(Boolean),
+                )
+              }
+              placeholder={"Lubang hitam terdekat dari Bumi\nSinyal radio yang berulang tiap 16 hari"}
+              className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 font-mono text-sm outline-none focus:border-sky-500"
+            />
+          </FieldRow>
+        </div>
+
+        <ScheduleStatusPanel
+          status={scheduleStatus}
+          onTick={runTick}
+          onApply={applySchedule}
+          busy={scheduleBusy}
+          dirty={s.dirty}
+        />
+      </Section>
+
       <section className="px-frame">
         <h2 className="text-lg font-medium">Riwayat konfigurasi</h2>
         <p className="mb-4 mt-1 text-sm text-zinc-400">
@@ -264,6 +421,75 @@ export default function StudioPage() {
       </section>
 
       <Toast toast={s.toast} onClose={() => s.setToast(null)} />
+    </div>
+  );
+}
+
+function ScheduleStatusPanel({
+  status,
+  onTick,
+  onApply,
+  busy,
+  dirty,
+}: {
+  status: ScheduleStatus | null;
+  onTick: () => void;
+  onApply: () => void;
+  busy: boolean;
+  dirty: boolean;
+}) {
+  return (
+    <div className="mt-6 rounded-md border border-zinc-700 bg-zinc-950 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span
+            className="px-status"
+            data-kind={status?.running ? "done" : "failed"}
+          >
+            {status?.running ? "berjalan" : "berhenti"}
+          </span>
+          <span className="text-sm text-zinc-300">
+            {status?.last_plan
+              ? status.last_plan.due
+                ? `Terakhir: job dibuat${status.last_plan.title ? ` (${status.last_plan.title})` : ""}`
+                : `Menunggu: ${status.last_plan.reason}`
+              : "Belum ada pemeriksaan."}
+          </span>
+        </div>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={onTick}
+            disabled={busy || !status?.running}
+            className="rounded-md border border-zinc-700 px-3 py-1 text-xs text-zinc-300 hover:bg-zinc-800 disabled:opacity-50"
+          >
+            Periksa sekarang
+          </button>
+          <button
+            type="button"
+            onClick={onApply}
+            disabled={busy}
+            className="rounded-md border border-zinc-700 px-3 py-1 text-xs text-zinc-300 hover:bg-zinc-800 disabled:opacity-50"
+          >
+            Terapkan setelan
+          </button>
+        </div>
+      </div>
+      {dirty && (
+        <p className="mt-3 text-xs text-amber-400">
+          Simpan perubahan dulu, lalu tekan Terapkan setelan agar scheduler memakai nilai baru.
+        </p>
+      )}
+      {status?.last_error && (
+        <p className="mt-3 text-xs text-red-400" role="alert">
+          {status.last_error}
+        </p>
+      )}
+      {status && status.created.length > 0 && (
+        <p className="mt-3 text-xs text-zinc-500">
+          Job otomatis terakhir: <code className="text-zinc-400">{status.created.slice(-3).join(", ")}</code>
+        </p>
+      )}
     </div>
   );
 }

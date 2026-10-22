@@ -15,11 +15,12 @@ const EMPTY: StudioPayload = {
   version: 1,
   agents: {},
   budget: {},
+  schedule: {},
   production: {},
   runner: { default_mode: "mock", default_stop: "storyboard" },
 };
 
-export type SectionKey = "budget" | "production";
+export type SectionKey = "budget" | "production" | "schedule";
 export type AgentKey = keyof NonNullable<StudioPayload["agents"][string]>;
 
 export function useStudio() {
@@ -66,8 +67,11 @@ export function useStudio() {
     }));
   }, []);
 
-  const patchSection = useCallback((section: SectionKey, key: string, value: number | boolean | null) => {
-    setDraft((prev) => ({ ...prev, [section]: { ...prev[section], [key]: value } }));
+  const patchSection = useCallback((section: SectionKey, key: string, value: unknown) => {
+    setDraft((prev) => ({
+      ...prev,
+      [section]: { ...(prev[section] as Record<string, unknown>), [key]: value },
+    }));
   }, []);
 
   const patchText = useCallback((section: SectionKey, key: string, value: string) => {

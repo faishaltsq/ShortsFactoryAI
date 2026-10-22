@@ -1,5 +1,4 @@
 """Endpoint setelan provider: bisa dibaca, bisa diubah, dan tidak membocorkan kunci."""
-import pytest
 
 from tests.test_api_studio import _client
 from packages.core.config import get_settings

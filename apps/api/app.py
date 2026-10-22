@@ -23,6 +23,7 @@ from packages.core.pipeline import PipelineRunner
 from packages.core.personas import PERSONAS, TEAM
 from packages.core.prompts import DEFAULT_SYSTEM
 from packages.core.providers.router import UsageTracker, build_router
+from packages.core.scheduler import Scheduler, status_payload
 from packages.core.studio import (
     AGENT_KEYS,
     StudioConfig,
@@ -39,6 +40,11 @@ app = FastAPI(title="Pixel Studio API", version="0.1.0")
 RUNS: dict[str, dict[str, Any]] = {}
 RUN_LOCK = threading.Lock()
 CANCELLED_RUNS: set[str] = set()
+
+# Scheduler hidup di dalam proses API. Satu instance saja: dua scheduler pada
+# database yang sama akan saling balapan membuat job.
+SCHEDULER: Scheduler | None = None
+SCHEDULER_LOCK = threading.Lock()
 
 
 # --- auth (opsional; lokal tanpa token, remote wajib) -----------------------
@@ -206,6 +212,115 @@ def _start_run(job_id: str, *, mode: str, stop: str) -> None:
                 CANCELLED_RUNS.discard(job_id)
 
     threading.Thread(target=_worker, daemon=True, name=f"run-{job_id}").start()
+
+
+def _create_and_run(title: str, *, mode: str, stop: str, avoid: list[str] | None = None) -> str:
+    """Buat job lalu jalankan. Dipakai scheduler, bukan request HTTP.
+
+    `avoid` diteruskan ke payload job supaya ResearchAgent tahu judul yang sudah
+    dipakai. Tidak ada balapan dengan UI: `_start_run` menolak job yang sedang
+    berjalan.
+    """
+    store = _store()
+    payload: dict[str, Any] = {}
+    if avoid:
+        payload["avoid_titles"] = avoid[:60]
+    job = store.create(title=title, payload=payload or None)
+    _start_run(job.id, mode=mode, stop=stop)
+    return job.id
+
+
+def _scheduler_create_job(*, title: str, mode: str, stop: str, avoid: list[str]) -> str:
+    """Adapter yang dipakai Scheduler; memisahkan modul core dari HTTP layer."""
+    return _create_and_run(title, mode=mode, stop=stop, avoid=avoid)
+
+
+def _get_scheduler() -> Scheduler | None:
+    return SCHEDULER
+
+
+def _active_run_ids() -> set[str]:
+    """Job yang benar-benar punya run hidup di proses ini.
+
+    Scheduler memakai ini sebagai sumber kebenaran, bukan `updated_at` di
+    database: job yang ditinggal di tengah jalan punya timestamp baru tapi tidak
+    dikerjakan siapa pun.
+    """
+    with RUN_LOCK:
+        return {jid for jid, run in RUNS.items() if run.get("running")}
+
+
+def _new_scheduler() -> Scheduler:
+    return Scheduler(
+        _store(),
+        create_job=_scheduler_create_job,
+        active_ids_fn=_active_run_ids,
+    )
+
+
+@app.on_event("startup")
+def _start_scheduler() -> None:
+    """Nyalakan thread scheduler bila operator sudah mengaktifkannya.
+
+    Dimatikan secara default: scheduler yang hidup sendiri akan membuat video
+    dan menghabiskan kuota tanpa ada yang memutuskan.
+    """
+    global SCHEDULER
+    with SCHEDULER_LOCK:
+        if SCHEDULER is not None and SCHEDULER.running:
+            return
+        try:
+            studio = load_studio()
+        except StudioConfigError:
+            return
+        if not studio.schedule.enabled:
+            return
+        SCHEDULER = _new_scheduler()
+        SCHEDULER.start()
+
+
+@app.on_event("shutdown")
+def _stop_scheduler() -> None:
+    global SCHEDULER
+    with SCHEDULER_LOCK:
+        if SCHEDULER is not None:
+            SCHEDULER.stop()
+            SCHEDULER = None
+
+
+@app.get("/api/schedule")
+def schedule_status(authorization: str | None = Depends(require_token)) -> dict[str, Any]:
+    """Status scheduler: nyala, jadwal efektif, dan alasan terakhir tidak jalan."""
+    studio = _studio_or_409()
+    return status_payload(_get_scheduler(), studio.schedule)
+
+
+@app.post("/api/schedule/tick")
+def schedule_tick(authorization: str | None = Depends(require_token)) -> dict[str, Any]:
+    """Jalankan satu putaran pemeriksaan sekarang, tanpa menunggu tick berikutnya.
+
+    Berguna untuk memastikan jadwal benar sebelum menunggu berjam-jam.
+    """
+    scheduler = _get_scheduler()
+    if scheduler is None:
+        raise HTTPException(status_code=409, detail="scheduler tidak aktif; nyalakan di Studio")
+    plan = scheduler.tick()
+    return plan.as_dict()
+
+
+@app.post("/api/schedule/apply")
+def schedule_apply(authorization: str | None = Depends(require_token)) -> dict[str, Any]:
+    """Terapkan perubahan setelan jadwal tanpa restart API."""
+    global SCHEDULER
+    studio = _studio_or_409()
+    with SCHEDULER_LOCK:
+        if SCHEDULER is not None:
+            SCHEDULER.stop()
+            SCHEDULER = None
+        if studio.schedule.enabled:
+            SCHEDULER = _new_scheduler()
+            SCHEDULER.start()
+    return status_payload(SCHEDULER, studio.schedule)
 
 
 @app.get("/api/jobs")

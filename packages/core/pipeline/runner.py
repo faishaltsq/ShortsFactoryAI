@@ -93,7 +93,23 @@ class PipelineRunner:
         return Storyboard.model_validate(self._read(job_id, "storyboard.json"))
 
     def _research(self, job_id: str) -> None:
-        result = ResearchAgent(self.router).run(genres=DEFAULT_GENRES, avoid_titles=[], day_focus=self.store.get(job_id).title)
+        # Judul yang sudah pernah dibuat dikirim sebagai larangan supaya
+        # ResearchAgent tidak mengusulkan ide yang sama berulang kali. Tanpa
+        # ini, produksi otomatis menghasilkan video yang mirip terus.
+        from ..scheduler import avoid_titles
+
+        record = self.store.get(job_id)
+        # Judul yang dibawa payload (dari scheduler) dipakai lebih dulu: itu
+        # hasil keputusan jadwal, bukan tebakan.
+        banned = list(record.payload.get("avoid_titles") or [])
+        if not banned:
+            banned = avoid_titles(self.store.list(limit=500))
+        banned = [t for t in banned if t and t != record.title][:60]
+        result = ResearchAgent(self.router).run(
+            genres=DEFAULT_GENRES,
+            avoid_titles=banned,
+            day_focus=record.title,
+        )
         if not result.candidates:
             raise ValueError("research returned zero candidates")
         self.store.write_artifact(job_id, "research.json", result.model_dump(mode="json"))

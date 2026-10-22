@@ -24,6 +24,17 @@ export type StudioPayload = {
     max_daily_cost_usd?: number | null;
     max_retries?: number | null;
   };
+  /** Jadwal produksi otomatis. Absen pada payload API lama. */
+  schedule?: {
+    enabled?: boolean | null;
+    interval_hours?: number | null;
+    max_per_day?: number | null;
+    gap_minutes?: number | null;
+    mode?: "mock" | "live" | null;
+    stop?: string | null;
+    topics?: string[] | null;
+    quiet_hours?: number[] | null;
+  };
   production: {
     fps?: number | null;
     target_duration_s?: number | null;
@@ -142,6 +153,21 @@ export type ProvidersResponse = {
   };
 };
 
+export type ScheduleStatus = {
+  enabled: boolean;
+  running: boolean;
+  interval_hours: number;
+  max_per_day: number;
+  gap_minutes: number;
+  mode: string;
+  stop: string;
+  topics: string[];
+  quiet_hours: number[];
+  last_plan: { due: boolean; reason: string; title: string | null } | null;
+  last_error: string | null;
+  created: string[];
+};
+
 export type ModelCatalog = { models: string[]; source: string | null; error: string | null };
 
 export type FieldError = { loc: (string | number)[]; msg: string };
@@ -213,6 +239,13 @@ export const api = {
     request<{ ok: boolean; status: string }>(`/api/jobs/${id}/cancel`, { method: "POST" }),
   getArtifact: <T,>(id: string, name: string) => request<T>(`/api/jobs/${id}/artifact/${name}`),
   usage: () => request<UsageResponse>("/api/usage/today"),
+  schedule: () => request<ScheduleStatus>("/api/schedule"),
+  scheduleTick: () =>
+    request<{ due: boolean; reason: string; title: string | null }>("/api/schedule/tick", {
+      method: "POST",
+    }),
+  scheduleApply: () =>
+    request<ScheduleStatus>("/api/schedule/apply", { method: "POST" }),
   providers: () => request<ProvidersResponse>("/api/providers"),
   providerModels: (target: "worker" | "strategist_http") =>
     request<ModelCatalog>(`/api/providers/models?target=${target}`),

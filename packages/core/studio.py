@@ -130,6 +130,47 @@ class ProvidersOverride(BaseModel):
         return value
 
 
+class ScheduleOverride(BaseModel):
+    """Produksi otomatis berulang.
+
+    Default mati. Scheduler yang menyala sendiri akan menghabiskan kuota dan
+    membuat video tanpa ada yang memutuskan — jadi operator harus menyalakannya
+    secara eksplisit, dan bisa mematikannya kapan saja.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool | None = None
+    # Interval antar-job. Harian sampai mingguan menutup kebutuhan normal;
+    # nilai di luar itu ditolak supaya tidak jadi alat penguras kuota.
+    interval_hours: int | None = Field(None, ge=1, le=168)
+    max_per_day: int | None = Field(None, ge=0, le=24)
+    # Jeda antar-job di dalam satu hari, supaya tidak menembak beruntun.
+    gap_minutes: int | None = Field(None, ge=0, le=720)
+    mode: Literal["mock", "live"] | None = None
+    stop: str | None = None
+    # Topik diputar dari daftar ini supaya tidak mengarang arah setiap kali.
+    topics: list[str] | None = Field(None, max_length=200)
+    # Lewati jam-jam sepi; kosong = kapan saja.
+    quiet_hours: list[int] | None = Field(None, max_length=24)
+
+    @field_validator("stop")
+    @classmethod
+    def _stop_known(cls, value: str | None) -> str | None:
+        if value is not None and value not in RUNNER_STOPS:
+            raise ValueError(f"stop must be one of {RUNNER_STOPS}")
+        return value
+
+    @field_validator("quiet_hours")
+    @classmethod
+    def _hours_valid(cls, value: list[int] | None) -> list[int] | None:
+        if value is None:
+            return None
+        if any(h < 0 or h > 23 for h in value):
+            raise ValueError("quiet_hours harus jam 0-23")
+        return sorted(set(value))
+
+
 class StudioConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -139,6 +180,7 @@ class StudioConfig(BaseModel):
     production: ProductionOverride = Field(default_factory=ProductionOverride)
     providers: ProvidersOverride = Field(default_factory=ProvidersOverride)
     runner: RunnerOverride = Field(default_factory=RunnerOverride)
+    schedule: ScheduleOverride = Field(default_factory=ScheduleOverride)
 
     @field_validator("agents")
     @classmethod
