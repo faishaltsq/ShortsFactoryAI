@@ -23,7 +23,7 @@ def test_missing_file_returns_defaults(tmp_path, monkeypatch):
     cfg = load_studio()
     assert cfg.agents == {}
     assert cfg.budget.max_daily_tokens is None
-    assert cfg.runner.default_mode == "mock"
+    assert cfg.runner.default_mode == "live"
     assert cfg.runner.default_stop == "storyboard"
 
 
@@ -80,7 +80,7 @@ def test_history_menyimpan_versi_lama_saat_isi_berubah(tmp_path):
     snapshot = tmp_path / "studio-history" / history[0]["name"]
     assert _raw(snapshot) == {"version": 1, "agents": {}, "budget": {}, "production": {},
                               "providers": {"worker": {}, "strategist_http": {}},
-                              "runner": {"default_mode": "mock", "default_stop": "storyboard"},
+                              "runner": {"default_mode": "live", "default_stop": "storyboard"},
                               "schedule": {}}
     assert _raw(path)["budget"]["max_daily_tokens"] == 1
 

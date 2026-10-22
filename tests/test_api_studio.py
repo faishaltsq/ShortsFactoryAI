@@ -95,6 +95,63 @@ def test_run_endpoint_rejects_bad_stop(tmp_path, monkeypatch):
     assert resp.status_code == 422
 
 
+def _wait_idle(client, job_id: str, tries: int = 100) -> None:
+    """Tunggu run yang dimulai otomatis oleh POST /api/jobs benar-benar selesai.
+
+    POST /api/jobs memulai run di thread background; ada jeda sebelum entri RUNS
+    terbentuk. Membaca sekali bisa melihat `running: false` padahal run belum
+    sempat terdaftar, sehingga run berikutnya ditolak 409.
+    """
+    import time
+
+    seen = False
+    for _ in range(tries):
+        run = client.get(f"/api/jobs/{job_id}").json()["run"]
+        if run.get("running"):
+            seen = True
+        elif seen:
+            return
+        time.sleep(0.1)
+
+
+def test_mode_terkunci_pada_job(tmp_path, monkeypatch):
+    """Job yang lahir mock tetap mock walau UI mengirim live.
+
+    Menjalankan job mock dengan model asli mencampur artifact palsu dan asli
+    dalam satu video, jadi runner menolaknya. Lebih baik server mengabaikan
+    pilihan yang bertentangan daripada menggagalkan run di tengah jalan.
+    """
+    client, _ = _client(tmp_path, monkeypatch)
+    job_id = client.post("/api/jobs", json={"title": "mode terkunci", "mode": "mock",
+                                            "stop": "research"}).json()["job_id"]
+    _wait_idle(client, job_id)
+    resp = client.post(f"/api/jobs/{job_id}/run", json={"mode": "live", "stop": "research"})
+    assert resp.status_code == 202
+    assert resp.json()["mode"] == "mock", "mode job tidak boleh ditimpa UI"
+
+
+def test_run_tanpa_mode_memakai_mode_job(tmp_path, monkeypatch):
+    """UI tidak perlu mengirim mode sama sekali."""
+    client, _ = _client(tmp_path, monkeypatch)
+    job_id = client.post("/api/jobs", json={"title": "tanpa mode", "mode": "mock",
+                                            "stop": "research"}).json()["job_id"]
+    _wait_idle(client, job_id)
+    resp = client.post(f"/api/jobs/{job_id}/run", json={"stop": "research"})
+    assert resp.status_code == 202
+    assert resp.json()["mode"] == "mock"
+
+
+def test_resolusi_mode_mengutamakan_mode_job(monkeypatch, tmp_path):
+    """Mode job menang atas argumen dan atas default Studio."""
+    monkeypatch.setenv("STUDIO_CONFIG", str(tmp_path / "studio.json"))
+    from apps.api import app as api_module
+
+    # Job yang lahir live tetap live walau pemanggil mengirim mock.
+    assert api_module._resolve_mode_stop("mock", "research", job_mode="live") == ("live", "research")
+    # Tanpa mode job, argumen dipakai.
+    assert api_module._resolve_mode_stop("live", "research")[0] == "live"
+
+
 def test_usage_endpoint(tmp_path, monkeypatch):
     client, _ = _client(tmp_path, monkeypatch)
     body = client.get("/api/usage/today").json()

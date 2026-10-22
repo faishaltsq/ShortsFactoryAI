@@ -167,9 +167,16 @@ class RunJob(BaseModel):
     stop: str = ""
 
 
-def _resolve_mode_stop(mode: str, stop: str) -> tuple[str, str]:
+def _resolve_mode_stop(mode: str, stop: str, *, job_mode: str | None = None) -> tuple[str, str]:
+    """Tentukan mode dan stop untuk sebuah run.
+
+    Mode terkunci pada job sejak dibuat: mencampur mock dan live dalam satu job
+    menghasilkan artifact yang separuh palsu, jadi runner menolaknya. Kalau job
+    sudah punya mode, itu yang dipakai — bukan default Studio, dan bukan pilihan
+    dropdown yang bisa saja berbeda.
+    """
     studio = _studio_or_409()
-    final_mode = mode or studio.runner.default_mode
+    final_mode = job_mode or mode or studio.runner.default_mode
     final_stop = stop or studio.runner.default_stop
     if final_mode not in {"mock", "live"}:
         raise HTTPException(status_code=422, detail="mode harus mock atau live")
@@ -377,10 +384,12 @@ def get_job(job_id: str, authorization: str | None = Depends(require_token)) -> 
 @app.post("/api/jobs/{job_id}/run", status_code=202)
 def run_job(job_id: str, payload: RunJob, authorization: str | None = Depends(require_token)) -> dict[str, Any]:
     try:
-        _store().get(job_id)
+        record = _store().get(job_id)
     except (KeyError, ValueError) as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    mode, stop = _resolve_mode_stop(payload.mode, payload.stop)
+    # Mode job terkunci sejak dibuat; dropdown UI tidak boleh menimpanya.
+    mode, stop = _resolve_mode_stop(payload.mode, payload.stop,
+                                    job_mode=record.payload.get("provider_mode"))
     _start_run(job_id, mode=mode, stop=stop)
     return {"job_id": job_id, "mode": mode, "stop": stop, "running": True}
 

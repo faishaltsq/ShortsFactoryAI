@@ -29,7 +29,6 @@ export default function JobDetailPage() {
   const [artifact, setArtifact] = useState<{ name: string; body: unknown } | null>(null);
   const [starting, setStarting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
-  const [mode, setMode] = useState("mock");
   const [stop, setStop] = useState("storyboard");
   const [meta, setMeta] = useState<StudioResponse | null>(null);
 
@@ -80,7 +79,8 @@ export default function JobDetailPage() {
   const startRun = async () => {
     setStarting(true);
     try {
-      await api.runJob(id, { mode, stop });
+      // Mode tidak dikirim: server memakai mode yang terkunci pada job ini.
+      await api.runJob(id, { stop });
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Gagal menjalankan");
@@ -121,7 +121,7 @@ export default function JobDetailPage() {
           <p className="mt-1 flex flex-wrap items-center gap-3 text-sm text-zinc-400">
             <StateChip state={data.record.state} />
             <span>id {data.record.id}</span>
-            <span>mode {String(data.record.payload.provider_mode ?? mode)}</span>
+            <span>mode {String(data.record.payload.provider_mode ?? "belum diset")}</span>
             {isRunning && <span className="text-amber-400">berjalan…</span>}
           </p>
           {data.record.last_error && (
@@ -131,17 +131,17 @@ export default function JobDetailPage() {
           )}
         </div>
         <div className="flex flex-wrap items-end gap-2">
-          <label className="block space-y-1">
+          <div className="block space-y-1">
             <span className="text-xs text-zinc-500">Mode</span>
-            <select
-              value={mode}
-              onChange={(e) => setMode(e.target.value)}
-              className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm"
+            {/* Mode terkunci sejak job dibuat: mencampur mock dan live dalam
+                satu job menghasilkan artifact separuh palsu. */}
+            <p
+              className="rounded-md border border-zinc-800 bg-zinc-900/60 px-3 py-2 text-sm text-zinc-400"
+              title="Mode terkunci sejak job dibuat. Buat job baru untuk mengganti mode."
             >
-              <option value="mock">mock</option>
-              <option value="live">live</option>
-            </select>
-          </label>
+              {String(data.record.payload.provider_mode ?? "belum diset")}
+            </p>
+          </div>
           <label className="block space-y-1">
             <span className="text-xs text-zinc-500">Berhenti di</span>
             <select

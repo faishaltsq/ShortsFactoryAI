@@ -233,7 +233,9 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
-  runJob: (id: string, body: { mode: string; stop: string }) =>
+  // Mode tidak wajib: server memakai mode yang terkunci pada job. Hanya job
+  // yang belum punya mode (warisan lama) yang perlu menyebutkannya.
+  runJob: (id: string, body: { mode?: string; stop: string }) =>
     request<{ job_id: string }>(`/api/jobs/${id}/run`, { method: "POST", body: JSON.stringify(body) }),
   cancelJob: (id: string) =>
     request<{ ok: boolean; status: string }>(`/api/jobs/${id}/cancel`, { method: "POST" }),

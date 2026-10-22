@@ -250,7 +250,6 @@ export default function StudioPage() {
               onChange={(e) => s.patchRunner("default_mode", e.target.value)}
               className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm outline-none focus:border-sky-500"
             >
-              <option value="mock">mock (tanpa biaya, fixture)</option>
               <option value="live">live (model asli, ada biaya)</option>
             </select>
           </FieldRow>
@@ -322,7 +321,6 @@ export default function StudioPage() {
               className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm outline-none focus:border-sky-500"
             >
               <option value="live">live (model asli, ada biaya)</option>
-              <option value="mock">mock (tanpa biaya, fixture)</option>
             </select>
           </FieldRow>
           <FieldRow label="Berhenti di stage">

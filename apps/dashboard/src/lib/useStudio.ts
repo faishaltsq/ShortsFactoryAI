@@ -17,7 +17,7 @@ const EMPTY: StudioPayload = {
   budget: {},
   schedule: {},
   production: {},
-  runner: { default_mode: "mock", default_stop: "storyboard" },
+  runner: { default_mode: "live", default_stop: "storyboard" },
 };
 
 export type SectionKey = "budget" | "production" | "schedule";

@@ -69,7 +69,7 @@ class ProductionOverride(BaseModel):
 class RunnerOverride(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    default_mode: Literal["mock", "live"] = "mock"
+    default_mode: Literal["mock", "live"] = "live"
     default_stop: str = "storyboard"
 
     @field_validator("default_stop")
