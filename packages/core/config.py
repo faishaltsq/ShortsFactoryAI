@@ -102,6 +102,17 @@ def _deepseek_key() -> str:
     return ""
 
 
+def _strategist_key() -> str:
+    """Sama seperti worker: key router lokal dipakai, tapi tidak pernah ditulis."""
+    key = os.environ.get("STRATEGIST_API_KEY", "")
+    if key:
+        return key
+    base = urlsplit(os.environ.get("STRATEGIST_BASE_URL", ""))
+    if base.scheme == "http" and base.hostname == "localhost" and base.port == 20128 and not base.username and not base.password:
+        return os.environ.get("HERMES_CUSTOM_LOCALHOST_20128_API_KEY", "")
+    return ""
+
+
 @dataclass(frozen=True)
 class DeepSeekConfig:
     base_url: str = field(default_factory=lambda: os.environ.get("DEEPSEEK_BASE_URL", ""))
@@ -118,6 +129,24 @@ class ClaudeCliConfig:
     binary: str = field(default_factory=lambda: os.environ.get("CLAUDE_CLI_BIN", "claude"))
     model: str = field(default_factory=lambda: os.environ.get("CLAUDE_CLI_MODEL", "opus"))
     timeout_s: int = field(default_factory=lambda: _int("CLAUDE_CLI_TIMEOUT_S", 300))
+
+
+@dataclass(frozen=True)
+class StrategistConfig:
+    """Fallback strategist lewat endpoint OpenAI-compatible.
+
+    CLI punya satu titik kegagalan: kalau model upstream-nya mati, seluruh tier
+    strategist ikut mati karena chain-nya hanya berisi CLI + mock. Ini memberi
+    jalur kedua yang hidup selama gateway-nya hidup.
+    """
+
+    base_url: str = field(default_factory=lambda: os.environ.get("STRATEGIST_BASE_URL", ""))
+    api_key: str = field(default_factory=_strategist_key, repr=False)
+    model: str = field(default_factory=lambda: os.environ.get("STRATEGIST_MODEL", ""))
+
+    @property
+    def configured(self) -> bool:
+        return bool(self.base_url and self.model)
 
 
 @dataclass(frozen=True)
@@ -138,6 +167,7 @@ class Settings:
     budget: BudgetConfig = field(default_factory=BudgetConfig)
     deepseek: DeepSeekConfig = field(default_factory=DeepSeekConfig)
     claude_cli: ClaudeCliConfig = field(default_factory=ClaudeCliConfig)
+    strategist: StrategistConfig = field(default_factory=StrategistConfig)
     production: ProductionConfig = field(default_factory=ProductionConfig)
     db_path: Path = field(default_factory=lambda: JOBS_DIR / "factory.db")
 

@@ -265,8 +265,22 @@ def build_router(settings: Settings | None = None, *, job_id: str | None = None,
             tier="strategist",
             timeout_s=settings.claude_cli.timeout_s,
         ),
-        MockProvider(),
     ]
+    # Jalan kedua: CLI bisa mati total kalau model upstream-nya nonaktif, dan
+    # tier strategist tidak punya provider lain. Urutannya setelah CLI supaya
+    # kualitas review tetap dari CLI saat tersedia.
+    if settings.strategist.configured:
+        strategist_chain.append(
+            OpenAICompatProvider(
+                name="strategist-http",
+                base_url=settings.strategist.base_url,
+                api_key=settings.strategist.api_key,
+                model=settings.strategist.model,
+                tier="strategist",
+                timeout_s=settings.budget.request_timeout_s,
+            )
+        )
+    strategist_chain.append(MockProvider())
 
     router = ProviderRouter(
         worker_chain=worker_chain,

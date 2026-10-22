@@ -79,8 +79,12 @@ class RenderAgent:
         props_path = job_dir / "render-props.json"
         atomic_json(props_path, {"storyboard": props})
         partial = job_dir / "output.partial.mp4"
+        # Remotion defaults to port 3000, which is the dashboard's dev port: the
+        # render would then bundle against the wrong app and fail. Pin a port
+        # that belongs to rendering only.
         run_checked(["node", str(cli), "render", "src/index.ts", "Short", str(partial),
-                     "--props=" + str(props_path), "--codec=h264", "--pixel-format=yuv420p", "--color-space=bt709", "--concurrency=2"],
+                     "--props=" + str(props_path), "--codec=h264", "--pixel-format=yuv420p",
+                     "--color-space=bt709", "--concurrency=2", "--port=3999"],
                     cwd=self.video_dir, log_path=job_dir / "render.log", timeout=900, cancelled=cancelled)
         probe = probe_media(partial)
         validate_probe(probe, expected_frames=storyboard.total_frames, fps=storyboard.fps, width=storyboard.width, height=storyboard.height)
