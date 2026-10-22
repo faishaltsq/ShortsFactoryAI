@@ -86,6 +86,21 @@ describe("halaman providers", () => {
     expect(screen.getByText("Strategist (HTTP)")).toBeTruthy();
   });
 
+  it("strategist HTTP punya base URL dan tombol muat model, CLI tidak", async () => {
+    render(<ProvidersPage />);
+    await waitFor(() => expect(screen.getByText("Strategist (HTTP)")).toBeTruthy());
+
+    // Dua provider HTTP (worker + strategist_http) harus punya kolom base URL.
+    const baseUrlInputs = screen.getAllByPlaceholderText(/http/i);
+    expect(baseUrlInputs).toHaveLength(2);
+
+    // Tombol muat model hanya untuk yang punya endpoint HTTP.
+    expect(screen.getAllByRole("button", { name: "Muat model" })).toHaveLength(2);
+
+    // CLI tidak punya endpoint, jadi tidak boleh punya kolom base URL.
+    expect(screen.getAllByText("Base URL")).toHaveLength(2);
+  });
+
   it("tidak pernah menampilkan nilai API key", async () => {
     const withKey = JSON.parse(JSON.stringify(PAYLOAD));
     withKey.editable.worker.has_key = true;
