@@ -1,31 +1,29 @@
-import { defineConfig, devices } from '@playwright/test';
+import { defineConfig } from "@playwright/test";
 
+// The dashboard is exercised against fixture API routes only. The API origin
+// points at a closed local port on purpose: any request that is not fulfilled by
+// a test fixture must fail loudly instead of reaching the operator's real jobs,
+// configuration, providers, or database.
 export default defineConfig({
-  testDir: './tests/e2e',
-  timeout: 60_000,
-  expect: { timeout: 15_000 },
-  fullyParallel: false,
+  testDir: "./e2e",
+  fullyParallel: true,
+  forbidOnly: Boolean(process.env.CI),
+  retries: 0,
   workers: 1,
-  reporter: [['list']],
+  reporter: [["list"], ["html", { open: "never" }]],
+  outputDir: "../../data/renders/studio-e2e",
   use: {
-    baseURL: 'http://127.0.0.1:3018',
-    trace: 'retain-on-failure',
-    screenshot: 'only-on-failure',
+    baseURL: "http://127.0.0.1:3018",
+    browserName: "chromium",
+    viewport: { width: 1440, height: 1000 },
+    trace: "retain-on-failure",
+    screenshot: "only-on-failure",
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
-  webServer: [
-    {
-      command: 'uv run uvicorn apps.api.server:app --host 127.0.0.1 --port 8018',
-      cwd: '../../',
-      url: 'http://127.0.0.1:8018/api/health',
-      reuseExistingServer: true,
-      timeout: 60_000,
-    },
-    {
-      command: 'npm run start',
-      url: 'http://127.0.0.1:3018',
-      reuseExistingServer: true,
-      timeout: 60_000,
-    },
-  ],
+  webServer: {
+    command: "node node_modules/next/dist/bin/next dev --hostname 127.0.0.1 --port 3018",
+    url: "http://127.0.0.1:3018",
+    reuseExistingServer: false,
+    timeout: 120000,
+    env: { NODE_ENV: "development", STUDIO_API_ORIGIN: "http://127.0.0.1:9" },
+  },
 });
