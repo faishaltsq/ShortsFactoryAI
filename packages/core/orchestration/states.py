@@ -88,6 +88,18 @@ ARTIFACT_FOR_STATE: dict[JobState, str] = {
     JobState.READY_FOR_APPROVAL: "approval.json",
 }
 
+#: Pipeline stop points shared by the CLI and the API — one source of truth.
+STOP_POINTS: dict[str, JobState] = {
+    "research": JobState.TOPIC_SELECTED,
+    "script": JobState.SCRIPT_GENERATED,
+    "creative": JobState.CREATIVE_REVIEW,
+    "storyboard": JobState.STORYBOARD_READY,
+    "audio": JobState.AUDIO_READY,
+    "render": JobState.TECHNICAL_QC,
+    "editorial": JobState.EDITORIAL_QC,
+    "approval": JobState.READY_FOR_APPROVAL,
+}
+
 
 class IllegalTransition(ValueError):
     pass
