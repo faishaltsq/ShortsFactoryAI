@@ -3,8 +3,8 @@ import pytest
 from packages.core.config import get_settings
 from packages.core.providers import BudgetExceededError, MockProvider, ProviderRouter
 from packages.core.providers.base import ProviderError
-from packages.core.providers.claude_cli import ClaudeCliProvider
 from packages.core.providers.router import UsageTracker
+from packages.core.studio import StudioConfig
 
 
 class BoomProvider:
@@ -65,10 +65,23 @@ def test_budget_blocks_then_releases(tmp_env):
     assert original.max_daily_tokens >= 1
 
 
-def test_claude_cli_healthy_probe(monkeypatch):
-    from types import SimpleNamespace
-    import packages.core.providers.claude_cli as cli
+def test_http_strategist_endpoint_is_used_when_configured(tmp_path, monkeypatch):
+    from packages.core.config import Settings, StrategistConfig
+    from packages.core.providers.router import build_router
 
-    monkeypatch.setattr(cli.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(returncode=0))
-    provider = ClaudeCliProvider(binary="claude", model="opus")
-    assert provider.healthy() is True
+    settings = Settings(strategist=StrategistConfig(
+        base_url="http://127.0.0.1:9/v1", api_key="", model="m", enabled=True,
+    ))
+    router = build_router(settings, db_path=tmp_path / "usage.sqlite")
+    assert router._chain("strategist")[0].name == "strategist-http"
+
+
+def test_cli_retired_but_old_studio_snapshot_still_loads():
+    legacy = {
+        "version": 1,
+        "providers": {"strategist_cli": {"enabled": True}},
+        "runner": {"default_mode": "mock", "default_stop": "storyboard"},
+    }
+    config = StudioConfig.model_validate(legacy)
+    assert not hasattr(config.providers, "strategist_cli")
+    assert config.runner.default_stop == "storyboard"

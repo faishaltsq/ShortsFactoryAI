@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
+from uuid import uuid4
 
 from ..agents import (
     ClaimExtractorAgent,
@@ -22,8 +23,9 @@ from ..media.process import json_hash
 from ..orchestration import JobState, JobStore
 from ..orchestration.leases import LeaseKeeper, LeaseLostError
 from ..orchestration.states import PIPELINE_ORDER, can_transition
+from ..activity import STAGE_AGENTS
 from ..observability.events import safe_text
-from ..observability.lifecycle import RunObserver
+from ..observability.telemetry import RunTelemetry
 from ..providers import BudgetExceededError, ProviderError, build_router
 from ..research import (
     FetchedSource,
@@ -323,28 +325,32 @@ class PipelineRunner:
         reused_review = ((root / "draft_qc.json").exists() and
                          self._read(job_id, "draft_qc.json").get("inputs_sha256") == inputs_hash)
         if not reused_review:
-            self.observer.started("DRAFT_QC")
+            self.observer.stage("QualityAgent", "DRAFT_QC", reused=False)
             review = QualityAgent(self.router).run(storyboard, script)
             review["inputs_sha256"] = inputs_hash
             self.store.write_artifact(job_id, "draft_qc.json", review)
+        else:
+            self.observer.stage("QualityAgent", "DRAFT_QC", reused=True)
         review = self._read(job_id, "draft_qc.json")
         passed = review["overall"] != "fail" and review["editorial"]["pass"]
         report.stages.append(StageReport("DRAFT_QC", passed, "draft_qc.json", detail="draft only; no rendered media verification"))
+        self.observer.done("QualityAgent", "DRAFT_QC", "draft_qc.json", reused=reused_review)
         if not passed and enforce:
             raise ValueError("draft editorial review failed")
-        self.observer.completed("DRAFT_QC", reused=reused_review)
         if not passed:
             return
         script_hash = json_hash(script_data)
         reused_metadata = ((root / "metadata.json").exists() and
                            self._read(job_id, "metadata.json").get("script_sha256") == script_hash)
         if not reused_metadata:
-            self.observer.started("METADATA")
+            self.observer.stage("MetadataAgent", "METADATA", reused=False)
             meta = MetadataAgent(self.router).run(script).model_dump(mode="json")
             meta["script_sha256"] = script_hash
             self.store.write_artifact(job_id, "metadata.json", meta)
+        else:
+            self.observer.stage("MetadataAgent", "METADATA", reused=True)
         self._read(job_id, "metadata.json")
-        self.observer.completed("METADATA", reused=reused_metadata)
+        self.observer.done("MetadataAgent", "METADATA", "metadata.json", reused=reused_metadata)
         report.stages.append(StageReport("METADATA", True, "metadata.json"))
         if (root / "assets.json").is_file():
             self._thumb(job_id, report)
@@ -359,17 +365,24 @@ class PipelineRunner:
         if not isinstance(headline, str) or not 1 <= len(headline.strip()) <= 32:
             report.stages.append(StageReport("THUMBNAIL", True, detail="metadata carries no thumbnail concept"))
             return
-        self.observer.started("THUMBNAIL")
+        self.observer.stage("RenderAgent", "THUMBNAIL", reused=False)
         assets = AssetManifest.model_validate(self._read(job_id, "assets.json"))
         thumb = ThumbnailAgent().run(self._storyboard_model(job_id), metadata,
                                      self.store.artifact_root(job_id), assets=assets)
         self.store.write_artifact(job_id, "thumbnail.json", thumb.model_dump(mode="json"))
         self._read(job_id, "thumbnail.json")
-        self.observer.completed("THUMBNAIL")
+        self.observer.done("RenderAgent", "THUMBNAIL", "thumbnail.json", reused=False)
         report.stages.append(StageReport("THUMBNAIL", True, "thumbnail.json",
                                          elapsed_ms=int((time.perf_counter() - started) * 1000)))
 
-    def run(self, job_id: str, *, stop_at: JobState = JobState.STORYBOARD_READY) -> PipelineReport:
+    def run(
+        self,
+        job_id: str,
+        *,
+        stop_at: JobState = JobState.STORYBOARD_READY,
+        cancelled: Callable[[], bool] | None = None,
+        activity_token: str | None = None,
+    ) -> PipelineReport:
         stages = self._stages()
         if stop_at not in {state for state, _, _ in stages}:
             raise ValueError(f"unsupported stop: {stop_at.value}")
@@ -387,13 +400,17 @@ class PipelineRunner:
             return report
         self.router.job_id = job_id
         current_stage = "PREFLIGHT"
-        observer = None
+        telemetry = None
         try:
             with LeaseKeeper(self.store, job_id, token) as keeper:
                 try:
                     mode = "mock" if self.force_mock else "live"
-                    observer = self.observer = RunObserver(self.store, job_id, source="mock" if self.force_mock else "production")
-                    observer.start()
+                    telemetry = self.observer = RunTelemetry(
+                        self.store, job_id,
+                        source="mock" if self.force_mock else "production",
+                        activity_token=activity_token or uuid4().hex,
+                    )
+                    telemetry.start()
                     prior_mode = record.payload.get("provider_mode")
                     if prior_mode and prior_mode != mode:
                         raise ValueError("provider mode cannot change for an existing job")
@@ -411,6 +428,9 @@ class PipelineRunner:
                         if self.store.get(job_id).state is JobState.CANCELLED:
                             report.blocked_reason = "cancelled by operator"
                             break
+                        if cancelled is not None and cancelled():
+                            report.blocked_reason = "dibatalkan operator"
+                            break
                         if state is JobState.EDITORIAL_QC:
                             self._draft_checks(job_id, report, enforce=False)
                             keeper.check()
@@ -418,7 +438,9 @@ class PipelineRunner:
                         reused = (self.store.artifact_root(job_id) / artifact).exists() and state not in {
                             JobState.EDITORIAL_QC, JobState.READY_FOR_APPROVAL,
                         }
+                        agent = STAGE_AGENTS[state.value]
                         if reused:
+                            telemetry.stage(agent, state.value, reused=True)
                             data = self._read(job_id, artifact)
                             if artifact == "review.json" and data["review"]["verdict"] == "reject":
                                 raise ValueError("stored creative review rejected script")
@@ -429,7 +451,7 @@ class PipelineRunner:
                             if artifact == "approval.json" and not data["eligible"]:
                                 raise ApprovalRejected("; ".join(data["blockers"]))
                         else:
-                            observer.started(state.value)
+                            telemetry.stage(agent, state.value, reused=False)
                             if state is JobState.RENDERING and self.store.get(job_id).state is JobState.AUDIO_READY:
                                 keeper.check()
                                 self.store.transition(job_id, state, detail="render started under exclusive job lock")
@@ -437,7 +459,7 @@ class PipelineRunner:
                             keeper.check()
                             self._read(job_id, artifact)
                         keeper.check()
-                        observer.completed(state.value, reused=reused)
+                        telemetry.done(agent, state.value, artifact, reused=reused)
                         current = self.store.get(job_id).state
                         if state is not JobState.IDEA_DISCOVERY and current is not state:
                             if can_transition(current, state):
@@ -455,8 +477,8 @@ class PipelineRunner:
                         keeper.check()
                 except BudgetExceededError as exc:
                     keeper.check()
-                    if observer:
-                        observer.failed(blocked=True, error_type=type(exc).__name__)
+                    if telemetry:
+                        telemetry.failed(blocked=True, error_type=type(exc).__name__)
                     current = self.store.get(job_id).state
                     if can_transition(current, JobState.BLOCKED):
                         self.store.transition(job_id, JobState.BLOCKED, detail=safe_text(str(exc)))
@@ -464,8 +486,8 @@ class PipelineRunner:
                     report.stages.append(StageReport(current_stage, False, detail=safe_text(str(exc))))
                 except ApprovalRejected as exc:
                     keeper.check()
-                    if observer:
-                        observer.failed(error_type="ApprovalRejected")
+                    if telemetry:
+                        telemetry.failed(error_type="ApprovalRejected")
                     current = self.store.get(job_id).state
                     detail = safe_text(f"ApprovalRejected: {exc}", 400)
                     if can_transition(current, JobState.REJECTED):
@@ -473,8 +495,8 @@ class PipelineRunner:
                     report.stages.append(StageReport(current_stage, False, detail=detail))
                 except (ProviderError, ValueError, KeyError, OSError, RuntimeError) as exc:
                     keeper.check()
-                    if observer:
-                        observer.failed(error_type=type(exc).__name__)
+                    if telemetry:
+                        telemetry.failed(error_type=type(exc).__name__)
                     current = self.store.get(job_id).state
                     detail = safe_text(f"{type(exc).__name__}: {exc}", 400)
                     if can_transition(current, JobState.FAILED):
@@ -485,8 +507,19 @@ class PipelineRunner:
             report.stages.append(StageReport(current_stage, False, detail=report.blocked_reason))
         finally:
             try:
-                if observer:
-                    observer.finish(self.store.get(job_id).state.value)
+                if telemetry:
+                    final_state = self.store.get(job_id).state.value
+                    if "dibatalkan" in (report.blocked_reason or "") or final_state == "CANCELLED":
+                        outcome = "stopped"
+                    elif "ownership lost" in (report.blocked_reason or ""):
+                        outcome = "interrupted"
+                    elif final_state == "BLOCKED":
+                        outcome = "blocked"
+                    elif final_state in {"FAILED", "REJECTED"}:
+                        outcome = "failed"
+                    else:
+                        outcome = "done"
+                    telemetry.finish(final_state, outcome)
             finally:
                 self.store.release_lease(job_id, token)
         report.final_state = self.store.get(job_id).state.value

@@ -7,15 +7,15 @@ system may reach a provider outside this module.
 
 from __future__ import annotations
 
+import copy
 import datetime as dt
 import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..config import Settings, get_settings
+from ..studio import StudioConfigError, load_studio
 from .base import BudgetExceededError, Provider, ProviderError, ProviderResult
-from .claude_cli import ClaudeCliProvider
-from .codex_cli import CodexCliProvider
 from .mock import MockProvider
 from .openai_compat import OpenAICompatProvider
 
@@ -139,13 +139,17 @@ class ProviderRouter:
             return
         settings = get_settings()
         totals = self.tracker.daily_totals()
-        if totals["tokens"] >= settings.budget.max_daily_tokens:
+        # None = tanpa batas. Dibandingkan eksplisit supaya angka 0 tetap berarti
+        # "tidak boleh ada panggilan", bukan "tanpa batas".
+        tokens_limit = settings.budget.max_daily_tokens
+        if tokens_limit is not None and totals["tokens"] >= tokens_limit:
             raise BudgetExceededError(
-                f"daily token budget spent: {int(totals['tokens'])}/{settings.budget.max_daily_tokens}"
+                f"daily token budget spent: {int(totals['tokens'])}/{tokens_limit}"
             )
-        if totals["cost"] >= settings.budget.max_daily_cost_usd:
+        cost_limit = settings.budget.max_daily_cost_usd
+        if cost_limit is not None and totals["cost"] >= cost_limit:
             raise BudgetExceededError(
-                f"daily cost budget spent: ${totals['cost']:.4f}/${settings.budget.max_daily_cost_usd:.2f}"
+                f"daily cost budget spent: ${totals['cost']:.4f}/${cost_limit:.2f}"
             )
 
     _FAILURE_COOLDOWN = 3  # consecutive failures before a provider is benched
@@ -174,6 +178,13 @@ class ProviderRouter:
         if allow_mock is None:
             allow_mock = self.allow_mock_default
         self._check_budget()
+        try:
+            studio = load_studio()
+        except StudioConfigError as exc:
+            raise ProviderError(f"studio config invalid: {exc}", provider="router") from exc
+        override = studio.agents.get(agent)
+        if override is not None and override.prompt:
+            system = override.prompt
         errors: list[str] = []
         chain = self._chain(tier)
         for provider in chain:
@@ -187,8 +198,17 @@ class ProviderRouter:
             if provider.name in self._health_cache and not self._health_cache[provider.name]:
                 errors.append(f"{provider.name}: unhealthy")
                 continue
+            target = provider
+            if override is not None and provider.name != "mock":
+                if override.model:
+                    target = copy.copy(target)
+                    target.model = override.model
+                    errors.append(f"studio override model={override.model} for {agent}")
+                if override.temperature is not None and hasattr(target, "temperature"):
+                    target = copy.copy(target)
+                    target.temperature = override.temperature
             try:
-                result = provider.complete(task=task, system=system, user=user)
+                result = target.complete(task=task, system=system, user=user)
             except ProviderError as exc:
                 errors.append(f"{provider.name}: {exc}")
                 self._mark_failure(provider.name)
@@ -217,6 +237,17 @@ class ProviderRouter:
         raise ProviderError("all providers failed: " + "; ".join(errors), provider="router")
 
 
+def _prov_temperature(section: str) -> float:
+    """Temperature default provider dari studio.json, bila operator mengubahnya."""
+    try:
+        cfg = load_studio()
+    except StudioConfigError:
+        return 0.7
+    group = getattr(cfg.providers, section, None)
+    value = getattr(group, "temperature", None) if group is not None else None
+    return 0.7 if value is None else float(value)
+
+
 def build_router(settings: Settings | None = None, *, job_id: str | None = None, db_path: Path | None = None, mock_only: bool = False) -> ProviderRouter:
     settings = settings or get_settings()
     tracker = UsageTracker(db_path or settings.db_path)
@@ -233,25 +264,22 @@ def build_router(settings: Settings | None = None, *, job_id: str | None = None,
                 model=settings.deepseek.model,
                 tier="worker",
                 timeout_s=settings.budget.request_timeout_s,
+                temperature=_prov_temperature("worker"),
             )
         )
     worker_chain.append(MockProvider())
 
-    strategist_chain: list[Provider] = [
-        ClaudeCliProvider(
-            binary=settings.claude_cli.binary,
-            model=settings.claude_cli.model,
-            tier="strategist",
-            timeout_s=settings.claude_cli.timeout_s,
-        ),
-    ]
-    if settings.codex_cli.enabled:
+    strategist_chain: list[Provider] = []
+    if settings.strategist.configured:
         strategist_chain.append(
-            CodexCliProvider(
-                binary=settings.codex_cli.binary,
-                model=settings.codex_cli.model,
+            OpenAICompatProvider(
+                name="strategist-http",
+                base_url=settings.strategist.base_url,
+                api_key=settings.strategist.api_key,
+                model=settings.strategist.model,
                 tier="strategist",
-                timeout_s=settings.codex_cli.timeout_s,
+                timeout_s=settings.budget.request_timeout_s,
+                temperature=_prov_temperature("strategist_http"),
             )
         )
     strategist_chain.append(MockProvider())

@@ -41,13 +41,19 @@ class CreativeDraftArtifact(ReviewArtifact):
 
 
 class ReviewSection(BaseModel):
+    # Unknown reviewer fields are non-critical; preserve required verdict and findings.
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
     passed: bool = Field(alias="pass")
     findings: list[str] = Field(default_factory=list)
 
 
 class FactualSection(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
     passed: bool = Field(alias="pass")
     unsupported_claims: list[str] = Field(default_factory=list)
+    findings: list[str] = Field(default_factory=list)
 
 
 class DraftQualityArtifact(BaseModel):
