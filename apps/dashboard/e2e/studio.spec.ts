@@ -41,11 +41,16 @@ async function installApi(page: Page, options: { withJob?: boolean; stale?: bool
       personas: Object.fromEntries(Object.entries(TEAM).filter(([, p]) => p.editable)),
       agent_keys: Object.keys(TEAM).filter((id) => TEAM[id].editable),
       default_prompts: Object.fromEntries(Object.keys(TEAM).map((id) => [id, "Default system prompt"])),
-      runner_stops: ["research", "script", "creative", "storyboard", "audio", "render"],
+      runner_stops: ["research", "script", "creative", "storyboard", "audio", "render", "editorial", "approval"],
       studio_path: "config/studio.json", studio_exists: true,
     } });
     if (pathname === "/api/studio/models") return route.fulfill({ json: { models: [], source: null, error: null } });
     if (pathname === "/api/studio/history") return route.fulfill({ json: { history: [] } });
+    if (pathname === "/api/studio/schedule") return route.fulfill({ json: {
+      generated_at: "2026-01-01T00:00:00Z", total: 0,
+      counts: { "ON GOING": 0, RESEARCHING: 0, UPCOMING: 0, SELESAI: 0, GAGAL: 0, TERTAHAN: 0 },
+      entries: [],
+    } });
     if (pathname === "/api/jobs" && request.method() === "GET") return route.fulfill({ json: {
       jobs: options.withJob ? [job.record] : [], states: ["TOPIC_SELECTED", "BLOCKED", "FAILED"],
       running: options.withJob ? { [job.record.id]: job.run.running } : {},
@@ -66,7 +71,7 @@ test("navigation fits a phone and exposes all routes", async ({ page }) => {
   await page.goto("/studio");
   await expect(page.getByRole("heading", { name: "Studio", exact: true })).toBeVisible();
   const nav = page.getByRole("navigation", { name: "Navigasi utama" });
-  await expect(nav.getByRole("link")).toHaveCount(5);
+  await expect(nav.getByRole("link")).toHaveCount(6);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await expect(page.getByRole("link", { name: "Lewati ke konten" })).toHaveAttribute("href", "#main-content");
 });
@@ -116,6 +121,21 @@ test("drafts survive agent changes and save makes exactly one PUT", async ({ pag
   });
   await expect(page.getByRole("button", { name: "Simpan perubahan" })).toBeDisabled();
   expect(puts).toBe(1);
+});
+
+test("schedule fields send posting hours as integers and default the stop to approval", async ({ page }) => {
+  await installApi(page);
+  await page.goto("/studio");
+  const schedule = page.getByRole("heading", { name: "Jadwal otomatis" }).locator("..");
+  // No saved stop: the select must show the real default, not the unusable `render`.
+  await expect(schedule.getByLabel("Berhenti di stage")).toHaveValue("approval");
+  await schedule.getByLabel(/Batas menunggu review/).fill("5");
+  await schedule.getByLabel(/Jam tayang/).fill("7,12,19");
+  const saved = page.waitForResponse((r) => r.request().method() === "PUT" && new URL(r.url()).pathname === "/api/studio");
+  await page.getByRole("button", { name: "Simpan perubahan" }).click();
+  const body = (await saved).request().postDataJSON();
+  expect(body.schedule).toMatchObject({ max_pending_approval: 5, posting_hours: [7, 12, 19] });
+  expect(body.schedule.posting_hours.every((h: unknown) => typeof h === "number")).toBe(true);
 });
 
 test("pause and reduced motion stop decoration without losing status", async ({ page }) => {
@@ -229,7 +249,7 @@ for (const width of [320, 390, 768, 1024, 1440]) {
     await installApi(page, { withJob: true });
     await page.setViewportSize({ width, height: 1000 });
     await page.emulateMedia({ reducedMotion: "reduce" });
-    const routes = ["/", "/studio", "/jobs", `/jobs/${JOB.record.id}`, "/providers", "/usage"];
+    const routes = ["/", "/studio", "/jobs", `/jobs/${JOB.record.id}`, "/schedule", "/providers", "/usage"];
     const exceptions: string[] = [];
     page.on("pageerror", (error) => exceptions.push(error.message));
     for (const route of routes) {
@@ -241,6 +261,7 @@ for (const width of [320, 390, 768, 1024, 1440]) {
         await expect(page.getByRole("textbox", { name: "System prompt" })).toBeVisible();
       }
       if (route === "/usage") await expect(page.getByRole("table")).toBeVisible();
+      if (route === "/schedule") await expect(page.getByRole("heading", { name: "Production schedule" })).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze();
       expect(results.violations).toEqual([]);
@@ -294,6 +315,31 @@ test("detail exposes observed activity separately from persisted stages", async 
   await page.getByRole("button", { name: "research.json", exact: true }).click();
   await expect(page.getByRole("region", { name: "Isi artifact" })).toContainText('"fixture": true');
 });
+test("operator rejection requires a reason and updates the persisted state", async ({ page }) => {
+  await installApi(page);
+  const job = structuredClone(JOB);
+  job.record.state = "READY_FOR_APPROVAL";
+  job.run = { running: false };
+  let state = "READY_FOR_APPROVAL";
+  let posted: unknown;
+  await page.route(`**/api/jobs/${job.record.id}`, (route) => route.fulfill({
+    json: { ...job, record: { ...job.record, state } },
+  }));
+  await page.route(`**/api/jobs/${job.record.id}/reject`, async (route) => {
+    posted = route.request().postDataJSON();
+    state = "REJECTED";
+    return route.fulfill({ json: { job_id: job.record.id, state, reason: "perlu revisi" } });
+  });
+  await page.goto(`/jobs/${job.record.id}`);
+  await expect(page.getByTestId("approval-controls")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Tolak job" })).toBeDisabled();
+  await page.getByLabel("Alasan penolakan").fill("perlu revisi");
+  await page.getByRole("button", { name: "Tolak job" }).click();
+  await expect(page.getByText("REJECTED", { exact: true })).toBeVisible();
+  expect(posted).toEqual({ operator: "local-operator", reason: "perlu revisi" });
+  await expect(page.getByTestId("approval-controls")).toHaveCount(0);
+});
+
 test("providers and usage retain operational data with team attribution", async ({ page }) => {
   await installApi(page);
   await page.goto("/providers");

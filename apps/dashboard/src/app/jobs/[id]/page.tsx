@@ -7,6 +7,7 @@ import { api, ApiError, type JobDetail, type StudioResponse } from "@/lib/api";
 import { ErrorState, StateChip } from "@/components/states";
 import { agentStatus, roster } from "@/lib/team";
 import { PixelAvatar } from "@/components/pixel/PixelAvatar";
+import { ApprovalControls } from "@/components/ApprovalControls";
 
 const PIPELINE = [
   "IDEA_DISCOVERY",
@@ -31,6 +32,10 @@ export default function JobDetailPage() {
   const [cancelling, setCancelling] = useState(false);
   const [stop, setStop] = useState("storyboard");
   const [meta, setMeta] = useState<StudioResponse | null>(null);
+  // Satu sumber kebenaran: daftar stop berasal dari API, bukan salinan lokal.
+  // Selama /api/studio belum termuat (atau gagal), satu pilihan aman ditampilkan.
+  const stops = meta?.runner_stops?.length ? meta.runner_stops : ["storyboard"];
+  const selectedStop = stops.includes(stop) ? stop : stops[0];
 
   const load = useCallback(async () => {
     try {
@@ -80,7 +85,7 @@ export default function JobDetailPage() {
     setStarting(true);
     try {
       // Mode tidak dikirim: server memakai mode yang terkunci pada job ini.
-      await api.runJob(id, { stop });
+      await api.runJob(id, { stop: selectedStop });
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Gagal menjalankan");
@@ -145,11 +150,11 @@ export default function JobDetailPage() {
           <label className="block space-y-1">
             <span className="text-xs text-zinc-500">Berhenti di</span>
             <select
-              value={stop}
+              value={selectedStop}
               onChange={(e) => setStop(e.target.value)}
               className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm"
             >
-              {["research", "script", "creative", "storyboard", "audio", "render"].map((s) => (
+              {stops.map((s) => (
                 <option key={s} value={s}>
                   {s}
                 </option>
@@ -177,6 +182,8 @@ export default function JobDetailPage() {
       </header>
 
       {data.run.error && <ErrorState title="Run terakhir gagal" message={data.run.error} onRetry={() => void startRun()} />}
+
+      <ApprovalControls jobId={id} state={data.record.state} onDecision={() => void load()} />
 
       {error && (
         <div className="px-stale" role="status">

@@ -1,7 +1,7 @@
 """Measure the studio's live path while a real render is running.
 
-Runs one pipeline job (mock LLM providers, real Remotion + FFmpeg render) and,
-while it runs, records:
+Runs one diagnostic pipeline job (fixture LLM providers, real Remotion + FFmpeg
+render) and, while it runs, records:
 
 - API snapshot latency (`/api/studio/snapshot` polled every 200 ms),
 - the lag between an event being written to SQLite and the same event arriving
@@ -9,6 +9,8 @@ while it runs, records:
 
 Prints the metrics and writes `evidence/studio-probe.json`. No assertions live
 here: numbers are evidence, and the thresholds belong to whoever reads them.
+The job it creates is a fixture job: delete it from `data/jobs/` and `factory.db`
+afterwards so the workspace stays production-only.
 
 Usage: uv run python scripts/studio_probe.py [--port 8018] [--poll-ms 200]
 """

@@ -311,6 +311,37 @@ export default function StudioPage() {
             error={s.errorFor("schedule", "gap_minutes")}
             onChange={(v) => s.patchSection("schedule", "gap_minutes", v)}
           />
+          <NumberInput
+            label="Batas menunggu review"
+            value={s.draft.schedule?.max_pending_approval ?? ""}
+            placeholder="3"
+            error={s.errorFor("schedule", "max_pending_approval")}
+            onChange={(v) => s.patchSection("schedule", "max_pending_approval", v)}
+          />
+          <FieldRow
+            label="Jam tayang (0-23)"
+            hint="Koma, satu jam per video harian. Kosong = kapan saja."
+            error={s.errorFor("schedule", "posting_hours")}
+          >
+            <input
+              type="text"
+              value={(s.draft.schedule?.posting_hours ?? []).join(",")}
+              placeholder="7,12,19"
+              onChange={(e) =>
+                s.patchSection(
+                  "schedule",
+                  "posting_hours",
+                  e.target.value
+                    .split(",")
+                    .map((t) => t.trim())
+                    .filter(Boolean)
+                    .map(Number)
+                    .filter((h) => Number.isFinite(h)),
+                )
+              }
+              className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 font-mono text-sm outline-none focus:border-sky-500"
+            />
+          </FieldRow>
         </div>
 
         <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -325,7 +356,7 @@ export default function StudioPage() {
           </FieldRow>
           <FieldRow label="Berhenti di stage">
             <select
-              value={s.draft.schedule?.stop ?? "render"}
+              value={s.draft.schedule?.stop ?? "approval"}
               onChange={(e) => s.patchSection("schedule", "stop", e.target.value)}
               className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm outline-none focus:border-sky-500"
             >

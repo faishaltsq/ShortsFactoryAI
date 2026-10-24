@@ -17,8 +17,10 @@ from packages.core.orchestration import JobStore
 from packages.core.observability.hermes import HermesObserver, InvalidDelivery, ObserverDisabled
 from packages.core.observability.projection import StudioService
 from packages.core.observability.schedule import ScheduleService
+from packages.core.studio import studio_path
 
 from .streaming import stream_events
+from .studio_routes import attach_studio_routes
 
 JOB_PATTERN = r"^[0-9a-f]{16}$"
 MODE_PATTERN = r"^(production|demo)$"
@@ -78,6 +80,10 @@ class SameOriginMiddleware(BaseHTTPMiddleware):
                         for origin in allowed_origins if urlsplit(origin).hostname}
 
     async def dispatch(self, request: Request, call_next):  # noqa: ANN201 - Starlette signature
+        expected_token = os.environ.get("STUDIO_TOKEN", "")
+        if expected_token and request.url.path.startswith("/api/"):
+            if request.headers.get("authorization") != f"Bearer {expected_token}":
+                return JSONResponse({"detail": "token tidak valid"}, status_code=401)
         origin = request.headers.get("origin")
         if origin:
             host = _canonical_host(urlsplit(origin).hostname or "")
@@ -120,7 +126,15 @@ def create_app(store: JobStore | None = None) -> FastAPI:
 
     @app.get("/api/health")
     def health() -> dict[str, Any]:
-        return {"status": "ok", "api": "studio", "observers": {"hermes": "configured" if _hermes_secret() else "disabled"}}
+        settings = get_settings()
+        return {
+            "ok": True,
+            "status": "ok",
+            "api": "studio",
+            "db": str(settings.db_path),
+            "studio_exists": studio_path().exists(),
+            "observers": {"hermes": "configured" if _hermes_secret() else "disabled"},
+        }
 
     @app.get("/api/studio/snapshot")
     def snapshot(job_id: str | None = Query(default=None, pattern=JOB_PATTERN),
@@ -230,6 +244,7 @@ def create_app(store: JobStore | None = None) -> FastAPI:
             raise HTTPException(exc.status_code, "delivery refused") from exc
         return JSONResponse(metadata, status_code=202)
 
+    attach_studio_routes(app, job_store)
     return app
 
 

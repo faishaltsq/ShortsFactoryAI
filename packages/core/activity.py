@@ -17,8 +17,11 @@ AgentId = Literal[
 ]
 Phase = Literal["running", "validating", "ready", "done", "failed", "blocked", "stopped", "interrupted"]
 
-# Which agent owns each pipeline stage. TECHNICAL_QC is owned by RenderAgent
-# because the same process performs the media checks.
+# Which agent owns each pipeline stage. This is the single source of truth; the
+# lifecycle observer imports it rather than keeping its own copy.
+# TECHNICAL_QC is owned by RenderAgent because the same process performs the media
+# checks. EDITORIAL_QC is a deterministic gate over written artifacts, so it belongs
+# to QualityAgent, not MetadataAgent.
 STAGE_AGENTS: dict[str, AgentId] = {
     "IDEA_DISCOVERY": "ResearchAgent",
     "TOPIC_SELECTED": "TopicSelectionAgent",
@@ -29,7 +32,10 @@ STAGE_AGENTS: dict[str, AgentId] = {
     "AUDIO_READY": "AudioAgent",
     "RENDERING": "RenderAgent",
     "TECHNICAL_QC": "RenderAgent",
-    "EDITORIAL_QC": "MetadataAgent",
+    "DRAFT_QC": "QualityAgent",
+    "METADATA": "MetadataAgent",
+    "THUMBNAIL": "RenderAgent",  # Remotion still rendered from the metadata concept
+    "EDITORIAL_QC": "QualityAgent",
     "READY_FOR_APPROVAL": "FactoryOrchestrator",
 }
 

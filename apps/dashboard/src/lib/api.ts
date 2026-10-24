@@ -34,6 +34,8 @@ export type StudioPayload = {
     stop?: string | null;
     topics?: string[] | null;
     quiet_hours?: number[] | null;
+    posting_hours?: number[] | null;
+    max_pending_approval?: number | null;
   };
   production: {
     fps?: number | null;
@@ -163,9 +165,45 @@ export type ScheduleStatus = {
   stop: string;
   topics: string[];
   quiet_hours: number[];
+  posting_hours: number[];
+  max_pending_approval: number;
   last_plan: { due: boolean; reason: string; title: string | null } | null;
   last_error: string | null;
   created: string[];
+};
+
+export type ProductionStatus = "ON GOING" | "RESEARCHING" | "UPCOMING" | "SELESAI" | "GAGAL" | "TERTAHAN";
+
+export type ScheduleEntry = {
+  job_id: string;
+  title: string;
+  status: ProductionStatus;
+  state: string;
+  stage_label: string;
+  next_action: string;
+  genre: string | null;
+  content_type: string | null;
+  templates: string[];
+  scene_count: number;
+  duration_ms: number | null;
+  verification: string;
+  sources: number;
+  progress: number;
+  due_at: string | null;
+  plan_id: string | null;
+  slot_status: string | null;
+  attempts: number;
+  source: string;
+  approval_required: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ScheduleProjection = {
+  generated_at: string;
+  counts: Record<ProductionStatus, number>;
+  total: number;
+  entries: ScheduleEntry[];
 };
 
 export type ModelCatalog = { models: string[]; source: string | null; error: string | null };
@@ -239,9 +277,20 @@ export const api = {
     request<{ job_id: string }>(`/api/jobs/${id}/run`, { method: "POST", body: JSON.stringify(body) }),
   cancelJob: (id: string) =>
     request<{ ok: boolean; status: string }>(`/api/jobs/${id}/cancel`, { method: "POST" }),
+  approveJob: (id: string, operator: string) =>
+    request<{ job_id: string; state: string; gate: Record<string, unknown> }>(`/api/jobs/${id}/approve`, {
+      method: "POST",
+      body: JSON.stringify({ operator }),
+    }),
+  rejectJob: (id: string, operator: string, reason: string) =>
+    request<{ job_id: string; state: string; reason: string }>(`/api/jobs/${id}/reject`, {
+      method: "POST",
+      body: JSON.stringify({ operator, reason }),
+    }),
   getArtifact: <T,>(id: string, name: string) => request<T>(`/api/jobs/${id}/artifact/${name}`),
   usage: () => request<UsageResponse>("/api/usage/today"),
   schedule: () => request<ScheduleStatus>("/api/schedule"),
+  scheduleProjection: () => request<ScheduleProjection>("/api/studio/schedule"),
   scheduleTick: () =>
     request<{ due: boolean; reason: string; title: string | null }>("/api/schedule/tick", {
       method: "POST",

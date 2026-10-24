@@ -138,6 +138,18 @@ export default function ProvidersPage() {
     return map;
   }, [data]);
 
+  // Nama provider hidup bisa berubah (worker-http, dan "deepseek" pada API lama).
+  // Ambil entri worker non-mock pertama supaya badge tidak hilang karena rename.
+  const liveHealth = useCallback(
+    (tier: "worker" | "strategist") => {
+      const entry = (data?.health ?? []).find(
+        (item) => item.ref.startsWith(`${tier}:`) && !item.ref.endsWith(":mock"),
+      );
+      return entry ? healthByRef[entry.ref] : undefined;
+    },
+    [data, healthByRef],
+  );
+
   return (
     <div className="space-y-6">
       <header className="px-page-header">
@@ -198,7 +210,7 @@ export default function ProvidersPage() {
                 name="worker"
                 editable={data.editable.worker}
                 draft={draft.worker ?? {}}
-                healthy={healthByRef["worker:deepseek"]}
+                healthy={liveHealth("worker")}
                 models={models.worker ?? []}
                 modelsError={modelsError.worker ?? null}
                 onReloadModels={() => void loadModels("worker")}
@@ -209,7 +221,7 @@ export default function ProvidersPage() {
                 name="strategist_http"
                 editable={data.editable.strategist_http}
                 draft={draft.strategist_http ?? {}}
-                healthy={healthByRef["strategist:strategist-http"]}
+                healthy={liveHealth("strategist")}
                 models={models.strategist_http ?? []}
                 modelsError={modelsError.strategist_http ?? null}
                 onReloadModels={() => void loadModels("strategist_http")}

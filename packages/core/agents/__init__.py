@@ -83,9 +83,27 @@ class TopicSelectionAgent(_AgentBase):
         raise ValueError(f"topic {selection.selected_topic_id!r} not found")
 
 
+class RevisionUnchanged(ValueError):
+    """The model returned the script unchanged; the findings were not acted on."""
+
+
 class ScriptAgent(_AgentBase):
     def __init__(self, router: ProviderRouter) -> None:
         super().__init__(router, name="ScriptAgent")
+
+    @staticmethod
+    def _normalise(script: Script, fallback_sources: list) -> Script:
+        """Enforce the source/verification invariants on a model-authored script."""
+        if script.content_type == "fictional":
+            script.sources = []
+            script.verification_status = VerificationStatus.fictional
+            return script
+        script.verification_status = VerificationStatus.needs_review
+        if not script.sources:
+            script.sources = list(fallback_sources)
+        if not script.sources:
+            raise ValueError("factual script produced without any source reference")
+        return script
 
     def run(self, topic: TopicCandidate) -> Script:
         result = self._ask(
@@ -93,17 +111,21 @@ class ScriptAgent(_AgentBase):
             system=prompts.SCRIPT_SYSTEM,
             user=prompts.script_user(topic.model_dump_json()),
         )
-        script = extract_model(result.content, Script)
-        if script.content_type == "fictional":
-            script.sources = []
-            script.verification_status = VerificationStatus.fictional
-        else:
-            script.verification_status = VerificationStatus.needs_review
-        if script.content_type == "factual" and not script.sources:
-            script.sources = list(topic.sources)
-        if script.content_type == "factual" and not script.sources:
-            raise ValueError("factual script produced without any source reference")
-        return script
+        return self._normalise(extract_model(result.content, Script), topic.sources)
+
+    def revise(self, script: Script, findings: list[str]) -> Script:
+        """Rewrite against the reviewer's findings, keeping the script's evidence base."""
+        result = self._ask(
+            task="script_revision",
+            system=prompts.REVISION_SYSTEM,
+            user=prompts.revision_user(script.model_dump_json(), findings),
+        )
+        revised = self._normalise(extract_model(result.content, Script), script.sources)
+        # A citation repair changes sources without touching the prose, so prose
+        # equality alone would reject a revision that did exactly what was asked.
+        if revised.full_text == script.full_text and revised.sources == script.sources:
+            raise RevisionUnchanged("revision did not change the script")
+        return revised
 
 
 class ClaimExtractorAgent(_AgentBase):
@@ -178,12 +200,46 @@ class StoryboardAgent(_AgentBase):
             language="id-ID",
         )
         if len(normalized["scenes"]) != len(script.segments):
-            raise ValueError("storyboard must return one scene per script segment")
+            # Models sometimes merge or split scenes. Narration is authoritative:
+            # every segment must keep a scene, so align deterministically instead
+            # of failing the whole job on a formatting deviation.
+            normalized["scenes"] = _align_scenes(normalized["scenes"], len(script.segments))
+            cursor = 0
+            for scene in normalized["scenes"]:
+                scene["startFrame"] = cursor
+                cursor += scene["durationInFrames"]
         for scene, segment in zip(normalized["scenes"], script.segments):
             scene["segment"] = segment.text
         normalized.update(fps=self.fps, width=self.width, height=self.height, language="id-ID")
         storyboard = Storyboard.model_validate(normalized)
         return _renumber(storyboard)
+
+
+_DATA_TEMPLATES = ("InfographicMotion", "HistoricalTimeline", "ParallaxStory", "MotionComic")
+
+
+def _align_scenes(scenes: list[dict], count: int) -> list[dict]:
+    """Force exactly `count` scenes, preserving the model's visuals where possible.
+
+    Narration is authoritative and one scene per segment is a renderer invariant,
+    so a model that merged or split scenes gets a deterministic repair: extra
+    scenes are dropped, and missing ones are cloned from the last scene with its
+    template data cleared (the narration is overwritten afterwards). A cloned
+    scene never invents template data, so it cannot carry a false number.
+    """
+    fixed = [dict(scene) for scene in scenes[:count]]
+    while len(fixed) < count:
+        source = dict(scenes[-1]) if scenes else {"template": "KineticTypography"}
+        source["sceneId"] = f"scene-{len(fixed) + 1:02d}"
+        if source.get("template") in _DATA_TEMPLATES:
+            source["template"] = "KineticTypography"
+        source.pop("data", None)
+        # Timing is recomputed from the narration below; keeping the source's
+        # frames would overlap the scene it was cloned from.
+        source["startFrame"] = 0
+        source["durationInFrames"] = 90
+        fixed.append(source)
+    return fixed
 
 
 def _renumber(storyboard: Storyboard) -> Storyboard:

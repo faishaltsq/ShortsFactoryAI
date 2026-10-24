@@ -172,6 +172,17 @@ _demo_script["segments"] = [
 ]
 _demo_script["verification_status"] = "needs_review"
 FIXTURES["script"] = json.dumps(_demo_script)
+
+# A revision must actually change the script; the pipeline refuses a no-op rewrite.
+# Only the hook changes, so the finding-driven path is exercised without touching
+# the segment count the storyboard fixture expects.
+_revision_script = json.loads(json.dumps(_demo_script))
+_revision_script["segments"][0] = {
+    "kind": "hook",
+    "text": "Setiap kali kamu menatap Matahari, kamu sedang melihat masa lalu yang sudah berjalan delapan menit.",
+}
+FIXTURES["script_revision"] = json.dumps(_revision_script)
+
 FIXTURES["creative_review"] = json.dumps({"verdict": "approve", "weak_spots": [], "revisions": [], "notes": "Demo fixture, not a live editorial review."})
 _DEMO_ILLUSTRATIONS = [
     {

@@ -6,14 +6,13 @@ API: `apps/api` (FastAPI). UI: `apps/dashboard` (Next.js App Router + Tailwind).
 ## Menjalankan
 
 ```bash
-uv run python scripts/run_studio_api.py                 # API di http://127.0.0.1:8000/docs
-cd apps/dashboard && npm run dev                        # UI di http://localhost:3000
+uv run python scripts/run_studio_api.py                 # API loopback di http://127.0.0.1:8018
+cd apps/dashboard && npm run dev                        # UI di http://127.0.0.1:3018
 ```
 
-- `STUDIO_API_ORIGIN` (default `http://127.0.0.1:8000`) dipakai Next.js `rewrites()` agar UI dan API terlihat satu origin — tidak ada CORS.
-- `STUDIO_HOST` / `STUDIO_PORT` mengubah alamat API.
-- `STUDIO_TOKEN` (opsional) melindungi semua route API. Isi nilainya hanya lewat environment; jangan pernah menaruhnya di `config/studio.json` atau di git.
-- Bila `STUDIO_API_ORIGIN` di-set, header `X-Studio-Token` otomatis disisipkan oleh client Next.js.
+- `STUDIO_API_ORIGIN` defaults to `http://127.0.0.1:8018`; the Next.js server-side route handler proxies `/api/*` and keeps credentials out of browser code.
+- `STUDIO_HOST` / `STUDIO_PORT` default to `127.0.0.1` / `8018`. The API launcher rejects non-loopback hosts.
+- `STUDIO_TOKEN` is optional and, when set, protects every API route. The dashboard proxy adds it as a bearer token server-side; never put it in `config/studio.json` or git.
 
 ## Halaman
 
@@ -32,12 +31,12 @@ cd apps/dashboard && npm run dev                        # UI di http://localhost
 - **Precedence:** `studio.json` > environment > default bawaan.
 - **Rahasia** (API key, kredensial) tetap di environment dan tidak pernah masuk file ini.
 - **Override per agent** (`model`, `temperature`, `prompt`) diterapkan di `ProviderRouter.call()` sehingga berlaku untuk semua panggilan model berikutnya, tanpa restart. Router tetap menolak pemakaian strategist tanpa strategist.
-- **Prompt:** string kosong berarti memakai prompt bawaan `prompts.py`. Tombol "Kembalikan default" mengosongkan override dan `GET /api/studio/prompts` mengembalikan teks bawaan untuk ditampilkan.
-- **Mode:** `mock` (default, tanpa biaya) atau `live`. `live` tetap butuh health check model yang tervalidasi; kalau tidak, run masuk `BLOCKED`, bukan `FAILED`.
+- **Prompt:** string kosong berarti memakai prompt bawaan `prompts.py`; `GET /api/studio` menyertakan `default_prompts` untuk editor.
+- **Mode:** `mock` atau `live`; mode dan stop default diatur lewat Studio. Live calls use the configured HTTP providers and must not silently fall back to mock.
 
 ## Riwayat & rollback
 
-Setiap simpan yang mengubah isi file menyalin versi lama ke `config/studio-history/studio-<UTC>Z.json` (maksimum 50 versi terbaru, di-commit ke git karena berisi prompt yang sudah dikurasi dan tidak berisi rahasia).
+Setiap simpan yang mengubah isi file menyalin versi lama ke `config/studio-history/studio-<UTC>Z.json` (maksimum 50 versi terbaru). File konfigurasi dan riwayat rollback bersifat lokal dan di-ignore oleh git.
 
 - `GET /api/studio/history` — daftar snapshot.
 - `POST /api/studio/rollback {"name": "studio-...Z.json"}` — validasi snapshot, lalu jadikan konfigurasi aktif. Nama yang tidak valid atau snapshot rusak dibalas `409`.

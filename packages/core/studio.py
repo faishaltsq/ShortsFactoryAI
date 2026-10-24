@@ -155,6 +155,10 @@ class ScheduleOverride(BaseModel):
     topics: list[str] | None = Field(None, max_length=200)
     # Lewati jam-jam sepi; kosong = kapan saja.
     quiet_hours: list[int] | None = Field(None, max_length=24)
+    # Jam tayang tetap: job hanya dibuat pada jam-jam ini; kosong = kapan saja.
+    posting_hours: list[int] | None = Field(None, max_length=24)
+    # Backpressure: berhenti membuat job baru bila sudah sebanyak ini menunggu review.
+    max_pending_approval: int | None = Field(None, ge=0, le=100)
 
     @field_validator("stop")
     @classmethod
@@ -170,6 +174,15 @@ class ScheduleOverride(BaseModel):
             return None
         if any(h < 0 or h > 23 for h in value):
             raise ValueError("quiet_hours harus jam 0-23")
+        return sorted(set(value))
+
+    @field_validator("posting_hours")
+    @classmethod
+    def _posting_hours_valid(cls, value: list[int] | None) -> list[int] | None:
+        if value is None:
+            return None
+        if any(h < 0 or h > 23 for h in value):
+            raise ValueError("posting_hours harus jam 0-23")
         return sorted(set(value))
 
 

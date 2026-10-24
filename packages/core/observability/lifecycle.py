@@ -5,20 +5,10 @@ import sqlite3
 import threading
 import uuid
 
+from ..activity import STAGE_AGENTS
 from ..orchestration.jobstore import JobStore
 from .events import safe_text
 from .store import StudioEventStore
-
-STAGE_AGENTS = {
-    "IDEA_DISCOVERY": "ResearchAgent", "TOPIC_SELECTED": "TopicSelectionAgent",
-    "SCRIPT_GENERATED": "ScriptAgent", "CREATIVE_REVIEW": "CreativeDirectorAgent",
-    "STORYBOARD_READY": "StoryboardAgent", "ASSETS_READY": "AssetAgent",
-    "AUDIO_READY": "AudioAgent", "RENDERING": "RenderAgent", "TECHNICAL_QC": "QualityAgent",
-    "DRAFT_QC": "QualityAgent", "METADATA": "MetadataAgent",
-    "THUMBNAIL": "RenderAgent",  # Remotion still rendered from the metadata concept
-    "EDITORIAL_QC": "QualityAgent",  # deterministic gate over written artifacts
-    "READY_FOR_APPROVAL": "FactoryOrchestrator",  # hands the job to the operator
-}
 
 
 class RunObserver:
