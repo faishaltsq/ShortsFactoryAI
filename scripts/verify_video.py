@@ -35,12 +35,31 @@ def verify_job(job_id: str, *, frames: bool = False) -> dict:
     probe = verify_render(render, storyboard, audio, root)
     if not qc["technical_pass"] or qc["render_sha256"] != render.sha256:
         raise ValueError("QC failed or belongs to a different render")
+    # `qc.json` covers technical checks only; editorial clearance and source
+    # verification live in their own artifacts. Reporting them as hardcoded False
+    # told the operator a cleared job had unverified sources right before upload.
+    try:
+        editorial = artifact("editorial_qc.json")
+        editorial_verified = editorial["overall"] == "pass" and all(c["pass"] for c in editorial["checks"])
+    except (OSError, ValueError, KeyError):
+        editorial_verified = False
+    try:
+        verification = artifact("verification.json")
+        sources_verified = verification["status"] == "supported"
+    except (OSError, ValueError, KeyError):
+        sources_verified = False
+    try:
+        approval = artifact("approval.json")
+        approval_eligible = bool(approval["eligible"])
+    except (OSError, ValueError, KeyError):
+        approval_eligible = False
     report = {"job_id": job_id, "state": record.state.value, "provider_mode": record.payload.get("provider_mode"),
               "output_path": str(root / render.output_path), "size_bytes": (root / render.output_path).stat().st_size,
               "duration_seconds": float(probe["format"]["duration"]), "video_frames": render.frame_count,
               "scene_count": len(storyboard.scenes), "subtitle_count": len(storyboard.subtitles),
               "technical_checks": qc["checks"], "audio_stats": qc["audio_stats"], "sha256": render.sha256,
-              "editorial_verified": False, "sources_verified": False, "published": False}
+              "editorial_verified": editorial_verified, "sources_verified": sources_verified,
+              "approval_eligible": approval_eligible, "published": False}
     evidence = root / "evidence"
     evidence.mkdir(exist_ok=True)
     if frames:
@@ -58,14 +77,24 @@ def verify_job(job_id: str, *, frames: bool = False) -> dict:
             picks.append({"scene_id": scene.sceneId, "timestamp_s": timestamp, "subtitle": cue.text,
                           "title": [t.text for t in scene.text if t.style.role == "title"], "path": str(output)})
             outputs.append(output)
-        if len(outputs) == 4:
+        if len(outputs) >= 2:
+            # Grid the frames for a single-glance review. The old code required
+            # exactly four scenes, so a five-scene job silently produced no sheet.
             contact = evidence / "contact-sheet.png"
+            columns = 2 if len(outputs) <= 4 else 3
+            rows = (len(outputs) + columns - 1) // columns
+            layout = "|".join(
+                f"{(index % columns) * 480}_{(index // columns) * 854}" for index in range(len(outputs))
+            )
             args = ["ffmpeg", "-v", "error", "-y"]
             for output in outputs:
                 args.extend(["-i", str(output)])
-            args.extend(["-filter_complex", "xstack=inputs=4:layout=0_0|w0_0|0_h0|w0_h0", "-frames:v", "1", str(contact)])
+            args.extend(["-filter_complex",
+                         f"xstack=inputs={len(outputs)}:layout={layout}:fill=black",
+                         "-frames:v", "1", str(contact)])
             run_checked(args, log_path=evidence / "frames.log")
             report["contact_sheet"] = str(contact)
+            report["contact_sheet_grid"] = f"{columns}x{rows}"
         report["frame_evidence"] = picks
     atomic_json(evidence / "verification.json", report)
     return report

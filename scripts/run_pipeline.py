@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Run one production job through the pipeline (dry-run safe).
+"""Run one production job through the pipeline.
 
-By default uses mock providers so nothing spends budget; --live routes to the
-real configured providers.
+Live providers are the default: production is the normal path. ``--mock`` is an
+explicit opt-in for a budget-free dry run, and mock jobs stay unpublishable.
 """
 from __future__ import annotations
 
@@ -16,26 +16,16 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from packages.core.config import JOBS_DIR, get_settings  # noqa: E402
-from packages.core.orchestration import JobState, JobStore  # noqa: E402
+from packages.core.orchestration import JobStore  # noqa: E402
+from packages.core.orchestration.states import STOP_POINTS  # noqa: E402
 from packages.core.pipeline import PipelineRunner  # noqa: E402
-
-STOPS = {
-    "research": JobState.TOPIC_SELECTED,
-    "script": JobState.SCRIPT_GENERATED,
-    "creative": JobState.CREATIVE_REVIEW,
-    "storyboard": JobState.STORYBOARD_READY,
-    "audio": JobState.AUDIO_READY,
-    "render": JobState.TECHNICAL_QC,
-    "editorial": JobState.EDITORIAL_QC,
-    "approval": JobState.READY_FOR_APPROVAL,
-}
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run one Shorts Factory job")
     parser.add_argument("--title", default="Cahaya matahari adalah masa lalu")
-    parser.add_argument("--live", action="store_true", help="use configured live providers")
-    parser.add_argument("--stop", default="storyboard", choices=sorted(STOPS))
+    parser.add_argument("--mock", action="store_true", help="dry run with fixture providers (never publishable)")
+    parser.add_argument("--stop", default="storyboard", choices=sorted(STOP_POINTS))
     parser.add_argument("--resume", default=None, help="job id to resume instead of creating a new job")
     args = parser.parse_args()
 
@@ -49,8 +39,8 @@ def main() -> int:
         job = store.create(title=args.title)
         print(f"job created: {job.id}")
 
-    runner = PipelineRunner(store, settings, force_mock=not args.live)
-    report = runner.run(job.id, stop_at=STOPS[args.stop])
+    runner = PipelineRunner(store, settings, force_mock=args.mock)
+    report = runner.run(job.id, stop_at=STOP_POINTS[args.stop])
 
     print(json.dumps(report.as_dict(), indent=2, ensure_ascii=False))
     print(f"artifacts: {store.artifact_root(job.id)}")

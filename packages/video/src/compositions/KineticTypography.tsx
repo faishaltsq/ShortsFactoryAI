@@ -20,6 +20,11 @@ export const KineticTypographyScene: React.FC<{scene: SceneSpec; theme: ThemeSpe
   const durationInFrames = scene.durationInFrames;
   const title = scene.text.find((element) => element.style.role === 'title')?.text ?? scene.segment;
   const words = title.split(/\s+/);
+  // This line is on screen. `sceneId` is an internal identifier ("sc1"), so it must
+  // never be the fallback: it was rendering into the published video as a caption.
+  const caption =
+    scene.text.find((element) => element.style.role === 'caption')?.text ??
+    (typeof scene.data?.caption === 'string' ? scene.data.caption : '');
   const highlightIndex = scene.data?.highlightIndex;
   const hi = typeof highlightIndex === 'number' ? highlightIndex : -1;
 
@@ -67,20 +72,22 @@ export const KineticTypographyScene: React.FC<{scene: SceneSpec; theme: ThemeSpe
             );
           })}
         </div>
-        <div
-          style={{
-            marginTop: 56,
-            fontFamily: theme.fontBody,
-            fontSize: 40,
-            color: theme.secondary,
-            opacity: interpolate(frame, [durationInFrames * 0.4, durationInFrames * 0.6], [0, 1], {
-              extrapolateLeft: 'clamp',
-              extrapolateRight: 'clamp',
-            }),
-          }}
-        >
-          {scene.sceneId}
-        </div>
+        {caption ? (
+          <div
+            style={{
+              marginTop: 56,
+              fontFamily: theme.fontBody,
+              fontSize: 40,
+              color: theme.secondary,
+              opacity: interpolate(frame, [durationInFrames * 0.4, durationInFrames * 0.6], [0, 1], {
+                extrapolateLeft: 'clamp',
+                extrapolateRight: 'clamp',
+              }),
+            }}
+          >
+            {caption}
+          </div>
+        ) : null}
       </SafeArea>
     </div>
   );

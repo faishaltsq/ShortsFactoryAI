@@ -72,7 +72,12 @@ Images in panels/layers must also occur in `scene.assetRefs`. Typography/colors 
 Narration synthesis remains an injectable provider boundary. Real FFprobe segment lengths still determine scene durations and subtitle offsets. The minimum 30-frame scene and frame-quantized PCM timeline are unchanged.
 
 - Music selection: `storyboard.backgroundMusic={"assetRef":"<music-id>","volume":0.15,"loop":true}`.
+  The block is validated where the storyboard is written: a mood/intensity descriptor without an
+  `assetRef` is rejected, and the normalizer drops one a model invents rather than persisting a
+  reference no manifest can resolve.
 - Scene effects: `scene.audio={"sfx":[{"assetRef":"<sfx-id>","frame":6,"volume":0.5}]}`. `frame` is relative to the scene after narration timing; out-of-range anchors fail rather than being clamped. An effect is trimmed at its scene boundary.
+- Text element `inFrame`/`outFrame` are re-clamped against the scene's own duration twice: once after the draft timing estimate and again after measured narration re-times the scene. A stale `outFrame` from the draft would otherwise hide the text mid-scene.
+- The thumbnail is rendered at `ASSETS_READY` for operator preview and re-rendered after `AUDIO_READY`, because narration re-times the storyboard it is bound to. `ThumbnailAgent` reuses its PNG only while the storyboard hash still matches.
 - Licensed music is looped only if requested, faded, and sidechain-compressed from the actual narration signal. Narration, ducked BGM and sample-delayed SFX are mixed with a limiter, then two-pass loudnorm targets -16 LUFS and -1.5 dBTP. The measured final result must be within 1 LU of target and at most -1 dBTP.
 - `narration.wav` preserves the dry normalized original; `mix.wav` is the single render input when a mix exists. `audio.narration_path` names whichever final track should play. Mix receipts bind original narration, source manifest, resolved asset receipt, graph hash, anchors and output checksum. The total sample count is kept identical to the narration timeline.
 

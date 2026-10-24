@@ -2,10 +2,10 @@
 
 ## Sample artifact
 
-- Job: `89b158426e7a4011`
-- Output: `data/jobs/89b158426e7a4011/output.mp4`
-- State: `TECHNICAL_QC`
-- Provider mode: `mock` for LLM stages; real Edge TTS for narration.
+- Job: `b55babc8f8ea414f` (live providers)
+- Output: `data/jobs/b55babc8f8ea414f/output.mp4`
+- State: `READY_FOR_APPROVAL`
+- Provider mode: `live` for all LLM stages; real Edge TTS for narration.
 
 `ffprobe` reported H.264, yuv420p, BT.709 limited range, 1080×1920, 30 FPS and 1098 video frames. AAC audio is 48 kHz stereo. Container duration is 36.608 seconds; file size is 2,852,953 bytes.
 

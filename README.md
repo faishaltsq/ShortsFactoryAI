@@ -34,36 +34,39 @@ Two double-clickable wrappers sit at the repository root. Both check prerequisit
 
 | File | Action |
 | --- | --- |
-| `run-demo.bat` | Runs the mock-content demo to `READY_FOR_APPROVAL` and keeps the window open with the exit code |
+| `run-demo.bat` | Runs a production job to `READY_FOR_APPROVAL` and keeps the window open with the exit code |
 | `run-demo.bat --resume JOB_ID` | Reuses a completed job's media instead of creating a new one |
+| `run-demo.bat --mock` | Budget-free dry run with fixture providers; never publishable |
 | `run-demo.bat --check` | Verifies uv, Node, FFmpeg, FFprobe, the venv and video dependencies, then exits |
 | `start-studio.bat` | Opens the API (`127.0.0.1:8018`) and the dashboard dev server (`127.0.0.1:3018`) in two windows |
 | `start-studio.bat --check` | Verifies uv, npm, the venv and dashboard dependencies, then exits |
 
 The launchers never enable the scheduler, never approve a job and never publish anything.
 
-## Produce a local demo
+## Produce a job
 
-Run from the repository root:
+Live providers are the default path. Run from the repository root:
 
 ```bash
-uv run python scripts/run_pipeline.py --title "Demo cahaya dari masa lalu" --stop approval
+uv run python scripts/run_pipeline.py --title "Topik produksi" --stop approval
 # Copy the actual job ID printed by the command:
 uv run python scripts/verify_video.py JOB_ID
 uv run python scripts/approve.py --list
 ```
 
-The pipeline uses mock **LLM content**, real network-backed Edge TTS, and local Remotion/FFmpeg rendering. It is not fully offline. No paid LLM completion is required for this demo. The pipeline stops at `READY_FOR_APPROVAL`; it does not approve or upload the job.
+The pipeline calls the configured worker/strategist adapters, real network-backed Edge TTS, and local Remotion/FFmpeg rendering. It stops at `READY_FOR_APPROVAL`; it does not approve or upload the job.
 
-Output: `data/jobs/JOB_ID/output.mp4` and, when metadata supplies a thumbnail concept, `data/jobs/JOB_ID/thumbnail.png`. A visible `DEMO / MOCK SCRIPT` watermark distinguishes fixture content. Repeating `uv run python scripts/run_pipeline.py --resume JOB_ID --stop approval` validates and reuses completed media. Mock jobs cannot be published.
+`--mock` is the explicit dry-run mode: fixture LLM content, a `DEMO / MOCK SCRIPT` watermark, `skipped_mock` retrieval and unenforced originality. Mock jobs may reach local review but can never pass the live approval gate or be published. No mock job remains in this workspace.
 
-The verified local sample is `data/jobs/45dd2b1b1b914db0/output.mp4`: 36.608 seconds, 1080×1920, 30 FPS, H.264/AAC, four scenes, 18 subtitle cues, and 16 passing technical checks. Its `approval.json` reports 10/10 checks, but factual sources remain `needs_review` because the content provider is mock.
+Output: `data/jobs/JOB_ID/output.mp4` and, when metadata supplies a thumbnail concept, `data/jobs/JOB_ID/thumbnail.png`. Repeating `uv run python scripts/run_pipeline.py --resume JOB_ID --stop approval` validates and reuses completed media.
+
+The verified production sample is `data/jobs/b55babc8f8ea414f`: live providers, 41.5 s, 1080×1920, 30 FPS, H.264/yuv420p + AAC 48 kHz stereo, five scenes, 17 subtitle cues, 16/16 technical checks, `verification.json` `supported` with seven quote-checked claims, and 10/10 approval checks passing.
 
 ## Providers and configuration
 
 `.env.example` lists the local configuration names. Existing environment variables take precedence over `.env`. Credentials are never included in job artifacts. The DeepSeek adapter uses only the configured base URL and model; the local router's credential fallback is restricted to the exact `http://localhost:20128` origin.
 
-- `--live` selects configured model adapters and disables mock fallback. Unavailable providers cause an explicit failed/blocked job.
+- Live adapters are selected by default and mock fallback is disabled. Unavailable providers cause an explicit failed/blocked job. `--mock` opts into fixtures for a dry run.
 - The worker model configured in this environment is `tig/deepseek-v4.1-flash` on the local router.
 - The strategist CLI uses the configured alias `opus`. That alias is **not evidence of the exact Claude Opus 5.5 model/version**.
 - The strategist chain is `claude-cli` → `codex-cli` → mock, so a failed Claude CLI call falls through to the locally authenticated Codex CLI (`CODEX_CLI_MODEL`, default `gpt-6.1-sol`) before any fixture is used. The Codex adapter runs `codex exec --json` in a throwaway read-only directory with shell, browser, computer-use, plugin and multi-agent features disabled, and never echoes CLI diagnostics because they can contain credential fragments.

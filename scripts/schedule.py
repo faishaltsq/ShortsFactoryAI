@@ -41,7 +41,9 @@ def main(argv: list[str] | None = None) -> int:
     plan.add_argument("--timezone", help="optional IANA timezone for calendar-day scheduling")
     plan.add_argument("--videos-per-day", required=True, type=int)
     plan.add_argument("--genres", required=True, help="comma-separated domain genres in rotation order")
-    plan.add_argument("--mode", default="mock", choices=("mock", "live"))
+    plan.add_argument("--mode", default="live", choices=("mock", "live"))
+    plan.add_argument("--days", default=7, type=int, help="number of calendar days to plan (1-30)")
+    plan.add_argument("--posting-times", help="comma-separated local HH:MM, one per daily video (e.g. 07:00,12:00,19:00)")
     plan.add_argument("--max-attempts", default=3, type=int)
     plan.add_argument("--retry-base-s", default=60, type=float)
     enable = commands.add_parser("enable", help="persist explicit operator permission; starts no process")
@@ -70,6 +72,9 @@ def main(argv: list[str] | None = None) -> int:
                     start=start, videos_per_day=args.videos_per_day,
                     genres=[genre.strip() for genre in args.genres.split(",")], provider_mode=args.mode,
                     max_attempts=args.max_attempts, retry_base_s=args.retry_base_s,
+                    days=args.days,
+                    posting_times=([value.strip() for value in args.posting_times.split(",")]
+                                   if args.posting_times else None),
                 ))
             else:
                 scheduler = Scheduler(store, runner=lambda job_id, *, provider_mode: _run_pipeline(

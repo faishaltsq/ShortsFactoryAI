@@ -25,7 +25,9 @@ export const EducationalExplainerScene: React.FC<{scene: SceneSpec; theme: Theme
   const {fps} = useVideoConfig();
   const durationInFrames = scene.durationInFrames;
   const title = scene.text.find((t) => t.style.role === 'title')?.text ?? scene.segment.slice(0, 60);
-  const kicker = scene.text.find((t) => t.style.role === 'kicker')?.text ?? scene.sceneId;
+  // A kicker is optional on-screen text. Falling back to `sceneId` printed the
+  // internal identifier ("sc1") into the video, so an absent kicker now renders nothing.
+  const kicker = scene.text.find((t) => t.style.role === 'kicker')?.text ?? '';
   const bullets = bulletsOf(scene);
   const titleAnim = slideUp({frame, fps, durationInFrames: 22, intensity: 0.5});
 
@@ -34,19 +36,21 @@ export const EducationalExplainerScene: React.FC<{scene: SceneSpec; theme: Theme
       <Background theme={theme} variant="split" />
       {watermark ? <Watermark text={watermark} theme={theme} /> : null}
       <SafeArea top={300} bottom={360}>
-        <div
-          style={{
-            fontFamily: theme.fontBody,
-            fontSize: 36,
-            letterSpacing: 6,
-            textTransform: 'uppercase',
-            color: theme.accent,
-            marginBottom: 26,
-            ...fadeIn({frame, fps, durationInFrames: 18}),
-          }}
-        >
-          {kicker}
-        </div>
+        {kicker ? (
+          <div
+            style={{
+              fontFamily: theme.fontBody,
+              fontSize: 36,
+              letterSpacing: 6,
+              textTransform: 'uppercase',
+              color: theme.accent,
+              marginBottom: 26,
+              ...fadeIn({frame, fps, durationInFrames: 18}),
+            }}
+          >
+            {kicker}
+          </div>
+        ) : null}
         <div
           style={{
             ...titleAnim,

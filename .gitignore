@@ -9,6 +9,11 @@ __pycache__/
 *.key
 config/client_secret*.json
 config/token*.json
+# Setelan runtime operator: model/prompt/budget/schedule pilihan sendiri plus
+# riwayat rollback-nya. Bukan source, dan fresh clone harus mulai dari default
+# (load_studio() mengembalikan StudioConfig() bila file tidak ada).
+config/studio.json
+config/studio-history/
 data/renders/*
 data/jobs/*
 data/assets/*

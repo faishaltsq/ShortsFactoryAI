@@ -13,7 +13,7 @@ Eligibility requires valid canonical contracts for the script, storyboard, sourc
 The gate checks:
 
 - Technical QC passes, every recorded technical check passes, and its checksum identifies the current render.
-- Draft editorial review passes and its input fingerprint matches the current script and storyboard.
+- Draft editorial review passes and its input fingerprint matches the current script and storyboard content. The fingerprint deliberately excludes scene timing and subtitle cues: the reviewer is forbidden from judging duration, and narration rewrites those fields from measurement, so binding to them would invalidate a correct review after the render already exists.
 - Metadata has a nonempty title and description and identifies the current script.
 - Physical narration and MP4 exist inside the job directory. Checksums, dependency hashes, measured durations and FFprobe properties validate through the media validators.
 - Live factual scripts have replayable quote checks against stored, checksum-identified source text. The evidence identifies the current script. An unread source or `needs_review` status cannot pass the live factual gate.
@@ -25,10 +25,13 @@ Mock factual content may reach local review with `needs_review`. This does not a
 ## Commands
 
 ```bash
-# Generate or resume a local demo through the operator boundary.
-# Default content providers are fixtures; audio still uses network-backed Edge TTS.
-uv run python scripts/run_pipeline.py --title "Demo untuk ditinjau" --stop approval
+# Generate or resume a job through the operator boundary.
+# Content providers are live by default; audio uses network-backed Edge TTS.
+uv run python scripts/run_pipeline.py --title "Job untuk ditinjau" --stop approval
 uv run python scripts/run_pipeline.py --resume JOB_ID --stop approval
+
+# Explicit fixture dry run; the job can never pass the live gate.
+uv run python scripts/run_pipeline.py --mock --title "Dry run" --stop approval
 
 # Inspect pending jobs; no approval occurs.
 uv run python scripts/approve.py --list
@@ -40,7 +43,7 @@ uv run python scripts/approve.py --reject JOB_ID --reason "Judul perlu diperbaik
 
 The same two decisions are available in the dashboard's Preview panel, under the video, once a job is pending. It submits `POST /api/jobs/{id}/approve` and `/reject` through the local API; `tests/test_studio_decisions.py` covers those routes, including the stale-verdict refusal and the cross-origin refusal.
 
-`--live` uses configured live providers; it is not required to test the local fixture workflow. The `--stop editorial` command stops after deterministic editorial QC rather than creating approval eligibility.
+Live providers are the default; `--mock` is the explicit dry-run mode and its jobs can never pass this gate. The `--stop editorial` command stops after deterministic editorial QC rather than creating approval eligibility.
 
 ## Cache invalidation and stale decisions
 

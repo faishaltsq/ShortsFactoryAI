@@ -15,6 +15,12 @@ uv run python scripts/schedule.py plan \
   --start '2026-10-22T10:00:00+07:00' \
   --videos-per-day 2 --genres science,history,fiction --mode mock
 
+# Jam tayang tetap: 3 video/hari selama 14 hari, tiap slot di 07:00/12:00/19:00 lokal.
+uv run python scripts/schedule.py plan \
+  --start '2026-11-01T00:00:00+07:00' \
+  --videos-per-day 3 --genres science,history,fiction \
+  --days 14 --posting-times 07:00,12:00,19:00
+
 uv run python scripts/schedule.py pause
 ```
 
@@ -52,13 +58,25 @@ restored = planner.get(plan.id)
 ```
 
 - `start` wajib timezone-aware. Offset tersimpan; untuk kalender dengan DST, gunakan `ZoneInfo` di Python atau CLI `--timezone Europe/London` bila data IANA tersedia di mesin.
-- Tepat tujuh window kalender dimulai dari jam lokal `start`. Setiap window dibagi merata menurut panjang aktual window dalam UTC. Dengan dua video/hari, di zona UTC+07 tetap, start 10:00 menghasilkan 10:00 dan 22:00 lokal.
+- `days` (default 7, rentang 1–30) menentukan jumlah window kalender. `--days` tersedia di CLI.
+- Tanpa `posting_times`, setiap window dibagi merata menurut panjang aktual window dalam UTC. Dengan dua video/hari, di zona UTC+07 tetap, start 10:00 menghasilkan 10:00 dan 22:00 lokal.
+- `posting_times` (CLI `--posting-times 07:00,12:00,19:00`) menaruh slot pada jam tayang tetap lokal: satu entri `HH:MM` 24 jam per video harian, urut sesuai slot. Slot hari ke-N jatuh pada tanggal lokal `start + N hari` di jam tersebut, lalu dikonversi ke UTC. Tanpa `posting_times`, pembagian merata di atas tetap berlaku.
+- `provider_mode` default `live`. Rencana `mock` harus menyebutkannya eksplisit; default tidak pernah diturunkan diam-diam ke fixture.
 - Genre divalidasi terhadap enum domain dan dirotasi kontinu antar-slot/hari. Nilai yang dipersist: `genre`, `provider_mode`, `plan_id`, `plan_slot_id`, dan `due_at` di payload job.
 - `videos_per_day`: integer 1–1000. `max_attempts`: integer 1–10, **termasuk upaya awal dan dispatch yang terinterupsi**. `retry_base_s`: finite, lebih dari 0, maksimal 86400.
-- Identitas plan deterministik dari seluruh spesifikasi. Pengulangan spesifikasi sama, termasuk setelah reopen/reboot, mengembalikan slot dan job yang sama. Nilai retry `60` dan `60.0` identik.
+- Identitas plan deterministik dari seluruh spesifikasi, termasuk `days` dan `posting_times`. Pengulangan spesifikasi sama, termasuk setelah reopen/reboot, mengembalikan slot dan job yang sama. Nilai retry `60` dan `60.0` identik; jam tayang berbeda menghasilkan plan id berbeda.
 - `(plan_id, day_index, slot_index)`, `job_id`, dan due time UTC memiliki unique constraint. Plan berbeda yang memakai due time sama ditolak sebagai overlap, bukan menggandakan produksi atau mengganti mode diam-diam.
 - Plan, seluruh slot, job, dan event pembuatan job masuk dalam **satu transaksi SQLite**. Kegagalan di tengah perencanaan me-rollback seluruh transaksi. Snapshot `job.json` ditulis setelah commit; panggilan plan ulang memperbaiki snapshot yang belum sempat ditulis tanpa membuat job baru.
 - Penulisan artifact menggunakan temporary filename unik dan atomic replace; konflik berbagi-file Windows memiliki empat upaya terbatas.
+
+## Kebijakan scheduler dashboard
+
+`packages/core/scheduler.py` adalah kebijakan scheduler yang dikendalikan dari halaman Studio (`config/studio.json`, `ScheduleOverride`). Default: `stop='approval'`, `mode='live'`, `max_pending_approval=3`.
+
+- `stop` harus `approval`, bukan `render`. `STOP_POINTS['render']` memetakan ke `TECHNICAL_QC`, sehingga job terjadwal berhenti sebelum `editorial_qc.json` dan `approval.json` ditulis dan tidak akan pernah bisa di-approve.
+- `posting_hours` (`[7,12,19]`) membatasi pembuatan job ke jam lokal tersebut. Di luar jam itu `due_at` mengembalikan `di luar jam tayang (HH:00)`. Kosong berarti kapan saja.
+- `max_pending_approval` adalah backpressure: bila jumlah job `READY_FOR_APPROVAL` sudah mencapai batas, tick baru ditolak dengan `menunggu review (n/cap)`. `0` mematikan batas ini.
+- `enabled` tetap `false` di repo: mengaktifkan produksi berulang adalah keputusan operator.
 
 ## Kontrak scheduler dan recovery
 

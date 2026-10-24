@@ -13,7 +13,7 @@ uv run python scripts/verify_video.py JOB_ID --frames
 
 Supported stops are research, script, creative, storyboard, audio and render. `render` includes technical QC and stops before editorial approval or publishing. Mock LLM mode is the default; real TTS is used when running the audio stage. A full render normally takes substantially less time than the hard timeout, but the first Chromium setup may take longer.
 
-`--live` is explicit and never falls back to fixture content. Provider mode is stored on the job and cannot be switched during resume. Existing jobs without provenance are refused; start a new job rather than marking old fixture data as live.
+Live providers are the default and never fall back to fixture content; `--mock` is explicit. Provider mode is stored on the job and cannot be switched during resume. Existing jobs without provenance are refused; start a new job rather than marking old fixture data as live.
 
 ## Artifact ownership
 
