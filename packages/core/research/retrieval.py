@@ -235,16 +235,23 @@ def _read_body(response: http.client.HTTPResponse, max_bytes: int, deadline: _De
         raise RetrievalError("encoded source is not plain evidence")
     body = bytearray()
     while True:
+        if response.isclosed():
+            # http.client closes the connection itself once the last byte (or the
+            # final chunk) arrives. Touching the socket after that raises
+            # WinError 10038 on Windows, which turned every live fetch into an
+            # error and left source verification with zero readable evidence.
+            break
         sock.settimeout(deadline.remaining())
         chunk = response.read1(min(64 * 1024, max_bytes + 1 - len(body)))
         deadline.remaining()
         if not chunk:
-            if response.length not in {None, 0}:
-                raise RetrievalError("incomplete source body")
-            return bytes(body)
+            break
         body.extend(chunk)
         if len(body) > max_bytes:
             raise SourceTooLarge("source exceeded the byte limit")
+    if response.length not in {None, 0}:
+        raise RetrievalError("incomplete source body")
+    return bytes(body)
 
 
 @dataclass(frozen=True)

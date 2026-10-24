@@ -77,3 +77,91 @@ def test_unread_sources_keep_the_script_in_review():
 
 def test_no_claims_needs_review():
     assert verification_status([]) is VerificationStatus.needs_review
+
+
+def test_quote_without_citation_markers_matches_prose_that_has_them():
+    """A correct quote must not be judged contradictory just because it omits [1]."""
+    from packages.core.research.retrieval import FetchedSource
+    from packages.core.research.verification import Claim, check_claims
+
+    text = ("ELIZA is an early natural language processing computer program developed from 1964 to 1967 "
+            "[ 1 ] at MIT by Joseph Weizenbaum . [ 2 ] [ 3 ] Created to explore communication.")
+    quote = ("ELIZA is an early natural language processing computer program developed from 1964 to 1967 "
+             "at MIT by Joseph Weizenbaum.")
+    source = FetchedSource(url="https://example.com/eliza", status="ok", chars=len(text), text=text)
+
+    [check] = check_claims([Claim(statement="ELIZA dibuat di MIT.", quote=quote,
+                                 source_url=source.url)], [source])
+    assert check.status == "supported", check.reason
+
+
+def test_a_quote_absent_from_the_source_is_still_unsupported():
+    from packages.core.research.retrieval import FetchedSource
+    from packages.core.research.verification import Claim, check_claims
+
+    text = "ELIZA is an early natural language processing computer program developed from 1964 to 1967."
+    source = FetchedSource(url="https://example.com/eliza", status="ok", chars=len(text), text=text)
+    [check] = check_claims([Claim(statement="ELIZA memenangkan Turing Award.",
+                                 quote="ELIZA won the Turing Award in 1966.",
+                                 source_url=source.url)], [source])
+    assert check.status == "unsupported"
+
+
+def test_an_elided_quote_must_still_be_present_in_order():
+    """An ellipsis may hide source text but may never invent it."""
+    from packages.core.research.retrieval import FetchedSource
+    from packages.core.research.verification import Claim, check_claims
+
+    text = ("The most famous script, DOCTOR, simulated a psychotherapist of the Rogerian school "
+            "(in which the therapist reflects back words) and used rules dictated in the script "
+            "to respond with non-directional questions to user inputs.")
+    source = FetchedSource(url="https://example.com/eliza", status="ok", chars=len(text), text=text)
+    quote = ("The most famous script, DOCTOR, simulated a psychotherapist of the Rogerian school ... "
+             "and used rules dictated in the script to respond with non-directional questions")
+
+    [ok] = check_claims([Claim(statement="DOCTOR meniru terapis Rogerian.",
+                               quote=quote, source_url=source.url)], [source])
+    assert ok.status == "supported", ok.reason
+
+    [bad] = check_claims([Claim(statement="DOCTOR meniru terapis Rogerian.",
+                                quote="The most famous script, DOCTOR, simulated a psychotherapist ... "
+                                      "and won the 1966 Turing Award for non-directional questions",
+                                source_url=source.url)], [source])
+    assert bad.status == "unsupported", "an elision must not let invented text pass"
+
+
+def test_an_elided_quote_keeps_fragments_in_source_order():
+    from packages.core.research.retrieval import FetchedSource
+    from packages.core.research.verification import Claim, check_claims
+
+    text = "Alpha fragment appears first here and beta fragment appears later in the same page."
+    source = FetchedSource(url="https://example.com/x", status="ok", chars=len(text), text=text)
+    [check] = check_claims([Claim(statement="urutan", quote="beta fragment appears later ... Alpha fragment appears first",
+                                  source_url=source.url)], [source])
+    assert check.status == "unsupported", "reversed fragments are not the source's order"
+
+
+def test_quote_without_maintenance_markers_matches_prose_that_has_them():
+    """A verbatim quote that drops "[page needed]" is not invented text.
+
+    Wikipedia interleaves maintenance templates into prose. The source sentence
+    "attributed human-like feelings to the computer program, [ page needed ] a
+    phenomenon..." is quoted by the model without the template; scoring that as
+    unsupported makes every such citation fail the live approval gate.
+    """
+    text = ("He was surprised that some people, including his secretary, attributed human-like "
+            "feelings to the computer program, [ page needed ] a phenomenon that came to be called "
+            "the ELIZA effect .")
+    source = _source(text)
+    quote = ("He was surprised that some people, including his secretary, attributed human-like "
+             "feelings to the computer program, a phenomenon that came to be called the ELIZA effect.")
+    [check] = check_claims([_claim(quote)], [source])
+    assert check.status == "supported", check.reason
+
+
+def test_bracketed_words_the_source_asserts_are_not_stripped():
+    """Only known maintenance templates are apparatus; arbitrary brackets are content."""
+    text = "The report says [not a marker] that the panel efficiency reached 20 percent."
+    source = _source(text)
+    [check] = check_claims([_claim("The report says that the panel efficiency reached 20 percent.")], [source])
+    assert check.status == "unsupported", "dropping an unknown bracketed phrase must not pass"

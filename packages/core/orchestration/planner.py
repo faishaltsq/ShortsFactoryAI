@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import uuid
 from dataclasses import dataclass, fields
 from datetime import datetime, timedelta, timezone
@@ -77,8 +78,9 @@ class ProductionPlanner:
                     conn.execute(f"ALTER TABLE production_slots ADD COLUMN {name} {definition}")
 
     def plan_seven_days(self, *, start: datetime, videos_per_day: int, genres: Sequence[str],
-                        provider_mode: str = "mock", max_attempts: int = 3,
-                        retry_base_s: float = 60) -> ProductionPlan:
+                        provider_mode: str = "live", max_attempts: int = 3,
+                        retry_base_s: float = 60, days: int = 7,
+                        posting_times: Sequence[str] | None = None) -> ProductionPlan:
         if start.tzinfo is None or start.utcoffset() is None:
             raise ValueError("start must be a timezone-aware datetime")
         if type(videos_per_day) is not int or not 1 <= videos_per_day <= 1000:
@@ -91,10 +93,24 @@ class ProductionPlanner:
             raise ValueError("max_attempts must be an integer from 1 to 10")
         if not math.isfinite(retry_base_s) or not 0 < retry_base_s <= 86400:
             raise ValueError("retry_base_s must be finite and between 0 and 86400")
+        if type(days) is not int or not 1 <= days <= 30:
+            raise ValueError("days must be an integer from 1 to 30")
+        times: tuple[tuple[int, int], ...] | None = None
+        if posting_times is not None:
+            if isinstance(posting_times, str) or len(posting_times) != videos_per_day:
+                raise ValueError("posting_times must have one HH:MM entry per daily video")
+            parsed = []
+            for value in posting_times:
+                match = re.fullmatch(r"([01][0-9]|2[0-3]):([0-5][0-9])", value if isinstance(value, str) else "")
+                if match is None:
+                    raise ValueError("posting_times entries must be HH:MM in 24-hour form")
+                parsed.append((int(match[1]), int(match[2])))
+            times = tuple(parsed)
         zone = getattr(start.tzinfo, "key", str(start.tzinfo))
         genre_values = tuple(Genre(genre).value for genre in genres)
         retry_base_s = float(retry_base_s)
-        spec = [start.isoformat(), zone, videos_per_day, genre_values, provider_mode, max_attempts, retry_base_s]
+        spec = [start.isoformat(), zone, videos_per_day, genre_values, provider_mode, max_attempts,
+                retry_base_s, days, times]
         plan_id = uuid.uuid5(uuid.NAMESPACE_URL, json.dumps(spec)).hex
         stamp = self.store.utc_now().isoformat()
         with self.store._connect() as conn:
@@ -103,14 +119,19 @@ class ProductionPlanner:
                 conn.execute("INSERT INTO production_plans VALUES (?,?,?,?,?,?,?)",
                              (plan_id, start.isoformat(), zone, videos_per_day, json.dumps(genre_values),
                               provider_mode, stamp))
-                for day in range(7):
+                for day in range(days):
                     begin = (start + timedelta(days=day)).astimezone(timezone.utc)
                     end = (start + timedelta(days=day + 1)).astimezone(timezone.utc)
                     for index in range(videos_per_day):
                         slot_id = uuid.uuid5(uuid.NAMESPACE_URL, f"{plan_id}:{day}:{index}").hex
                         job_id = uuid.uuid4().hex[:16]
                         genre = genre_values[(day * videos_per_day + index) % len(genre_values)]
-                        due = (begin + (end - begin) * (index / videos_per_day)).isoformat()
+                        if times is not None:
+                            hour, minute = times[index]
+                            local = (start + timedelta(days=day)).replace(hour=hour, minute=minute, second=0, microsecond=0)
+                            due = local.astimezone(timezone.utc).isoformat()
+                        else:
+                            due = (begin + (end - begin) * (index / videos_per_day)).isoformat()
                         if conn.execute("SELECT 1 FROM production_slots WHERE due_at=?", (due,)).fetchone():
                             raise ValueError("plan overlaps an existing production slot; reuse the existing plan")
                         payload = {"plan_id": plan_id, "plan_slot_id": slot_id, "genre": genre,

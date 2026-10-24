@@ -257,6 +257,21 @@ class JobStore:
             if token is not None:
                 self.release_lease(job_id, token)
 
+    def active_leases(self) -> set[str]:
+        """Job ids whose lease is held and not yet expired.
+
+        This is the durable answer to "is a worker running this job". The API's
+        in-memory run table only knows about runs started by that process, so it
+        reports idle after a restart while the worker is still rendering.
+        """
+        now = self.utc_now().timestamp()
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT id FROM jobs WHERE lease_owner IS NOT NULL AND lease_expires_at > ?",
+                (now,),
+            ).fetchall()
+        return {row["id"] for row in rows}
+
     def has_active_jobs(self) -> bool:
         with self._connect() as conn:
             row = conn.execute(

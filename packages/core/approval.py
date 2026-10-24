@@ -90,6 +90,29 @@ def _factual_sources_verified(script: dict, verification: dict) -> bool:
     return bool(claims) and bool(sources) and report.status is VerificationStatus.supported
 
 
+def review_fingerprint(script: dict, storyboard: dict) -> str:
+    """Bind a draft review to what the reviewer is allowed to judge.
+
+    Timing is excluded on purpose. The reviewer prompt forbids judging duration
+    or subtitle sync, and AudioAgent rewrites every duration from measured
+    narration. Hashing the timed fields would invalidate a correct review and
+    force a second pass that re-fails on numbers the reviewer was told to ignore.
+    """
+    content = {**storyboard}
+    content["scenes"] = [
+        {**scene,
+         "text": [{k: v for k, v in element.items() if k not in {"inFrame", "outFrame"}}
+                  for element in scene.get("text") or []]}
+        for scene in storyboard.get("scenes", [])
+    ]
+    for scene in content["scenes"]:
+        scene.pop("startFrame", None)
+        scene.pop("durationInFrames", None)
+    content.pop("subtitles", None)
+    content.pop("narration", None)
+    return json_hash({"script": script, "storyboard": content})
+
+
 def evaluate(store: JobStore, job_id: str) -> ApprovalGate:
     """Read every gate input from disk; missing artifacts are blockers, not crashes."""
     blockers: list[str] = []
@@ -117,7 +140,7 @@ def evaluate(store: JobStore, job_id: str) -> ApprovalGate:
     add("technical_qc", qc.get("technical_pass") is True and checks_pass and bool(render) and
         qc.get("render_sha256") == render.get("sha256"), "QC must pass and bind to this render")
     editorial = draft.get("editorial", {})
-    review_hash = json_hash({"script": script, "storyboard": storyboard})
+    review_hash = review_fingerprint(script, storyboard)
     add("editorial_review", editorial.get("pass") is True and draft.get("overall") in {"pass", "warn"} and
         draft.get("inputs_sha256") == review_hash, f"draft review overall={draft.get('overall', 'missing')}; inputs must match")
     status = verification.get("status")

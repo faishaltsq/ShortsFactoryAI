@@ -7,6 +7,7 @@ of markup and control characters, and kept as evidence rather than executed.
 """
 from __future__ import annotations
 
+from .history import ProductionHistory, production_history
 from .originality import OriginalityReport, check_originality, prior_scripts_from, similarity, trigrams
 from .retrieval import FetchedSource, fetch_sources, http_fetch, retrieve_or_raise
 from .verification import (
@@ -24,6 +25,7 @@ __all__ = [
     "ClaimCheck",
     "FetchedSource",
     "OriginalityReport",
+    "ProductionHistory",
     "VerificationReport",
     "build_report",
     "check_claims",
@@ -32,6 +34,7 @@ __all__ = [
     "http_fetch",
     "normalize",
     "prior_scripts_from",
+    "production_history",
     "retrieve_or_raise",
     "similarity",
     "trigrams",

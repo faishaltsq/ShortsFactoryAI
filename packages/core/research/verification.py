@@ -14,6 +14,24 @@ from ..schemas import VerificationStatus
 from .retrieval import FetchedSource
 
 MIN_QUOTE_CHARS = 12
+# Wikipedia and most reference pages interleave bracketed citation markers into the
+# prose. A model quoting the sentence correctly but omitting "[1]" would otherwise
+# be judged as contradicting the source, which is the opposite of what happened.
+# Inline maintenance templates ("[page needed]", "[better source needed]", "[who?]")
+# are the same kind of editorial apparatus and must be stripped too; without them a
+# verbatim quote that drops "[ page needed ]" is scored as invented text.
+# The list stays explicit: stripping every bracketed phrase would also erase words
+# the source actually asserts, which would hide fabricated quotes.
+_MAINTENANCE = (
+    "citation needed", "page needed", "better source needed", "additional citation needed",
+    "full citation needed", "clarification needed", "verification needed", "failed verification",
+    "not verified in body", "original research", "according to whom", "dead link",
+    "permanent dead link", "unreliable source", "weasel words", "needs update", "needs page",
+    "dubious", "disputed", "update", "sic", "quantify", "vague", "clarify",
+    "who", "what", "when", "where", "why", "how",
+)
+_MAINTENANCE_RE = "|".join(r"\s+".join(re.escape(word) for word in template.split()) for template in _MAINTENANCE)
+_CITATION = re.compile(rf"\[\s*(?:\d+|[a-z]|note\s*\d+|{_MAINTENANCE_RE})\s*\??\s*\]", re.IGNORECASE)
 _PUNCTUATION = re.compile(r"[^\w\s]", re.UNICODE)
 _WHITESPACE = re.compile(r"\s+")
 
@@ -69,8 +87,12 @@ class VerificationReport:
 
 
 def normalize(text: str) -> str:
-    """Casefold, drop punctuation, collapse whitespace: the form used for matching."""
-    return _WHITESPACE.sub(" ", _PUNCTUATION.sub(" ", text.casefold())).strip()
+    """Casefold, drop citation markers and punctuation, collapse whitespace.
+
+    This is the form used for matching, so a quote and the source text compare on
+    prose alone: bracketed reference markers are editorial apparatus, not evidence.
+    """
+    return _WHITESPACE.sub(" ", _PUNCTUATION.sub(" ", _CITATION.sub(" ", text.casefold()))).strip()
 
 
 def _index(sources: list[FetchedSource]) -> dict[str, FetchedSource]:
@@ -103,13 +125,41 @@ def check_claims(claims: list[Claim], sources: list[FetchedSource]) -> list[Clai
                 )
             )
             continue
-        if normalized_quote in normalize(source.text):
+        normalized_text = normalize(source.text)
+        if normalized_quote in normalized_text:
             checks.append(ClaimCheck(statement, SUPPORTED, url, quote, matched=quote, reason="quote found"))
+        elif _elided_match(quote, normalized_text):
+            checks.append(ClaimCheck(statement, SUPPORTED, url, quote, matched=quote,
+                                     reason="quote found across an elision"))
         else:
             checks.append(
                 ClaimCheck(statement, UNSUPPORTED, url, quote, reason="quote not found in retrieved text")
             )
     return checks
+
+
+_ELISION = re.compile(r"\s*(?:\.{3,}|…)\s*")
+
+
+def _elided_match(quote: str, normalized_text: str) -> bool:
+    """A quote joined with an ellipsis is several fragments, each of which must appear.
+
+    Models elide a clause and join two passages, which is legitimate citation
+    practice. Every fragment still has to be present, in order, in the source:
+    an ellipsis may hide text but may never invent it. The quote is split before
+    normalization, because normalization erases the ellipsis itself.
+    """
+    fragments = [normalize(fragment) for fragment in _ELISION.split(quote)]
+    fragments = [fragment for fragment in fragments if fragment]
+    if len(fragments) < 2 or any(len(fragment) < MIN_QUOTE_CHARS // 2 for fragment in fragments):
+        return False
+    cursor = 0
+    for fragment in fragments:
+        found = normalized_text.find(fragment, cursor)
+        if found < 0:
+            return False
+        cursor = found + len(fragment)
+    return True
 
 
 def verification_status(checks: list[ClaimCheck]) -> VerificationStatus:

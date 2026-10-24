@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from packages.core.approval import ApprovalRejected, approve, evaluate, pending, reject
+from packages.core.approval import ApprovalRejected, approve, evaluate, pending, reject, review_fingerprint
 from packages.core.artifacts import validate_artifact
 from packages.core.config import get_settings
 from packages.core.media.process import json_hash, probe_media, sha256_file
@@ -80,7 +80,7 @@ def _seed(store: JobStore, job_id: str, *, verification: str = "fictional",
     script_data = script.model_dump(mode="json", exclude_none=True)
     board_data = storyboard.model_dump(mode="json", exclude_none=True)
     store.write_artifact(job_id, "draft_qc.json", {
-        "inputs_sha256": json_hash({"script": script_data, "storyboard": board_data}),
+        "inputs_sha256": review_fingerprint(script_data, board_data),
         "technical": {"pass": True, "findings": []},
         "editorial": {"pass": editorial_pass, "findings": []},
         "factual": {"pass": True}, "overall": "pass" if editorial_pass else "fail",
@@ -393,10 +393,10 @@ def _live_factual_job(store):
     originality["script_text_sha256"] = json_hash({"text": text})
     store.write_artifact(job.id, "originality.json", originality)
     for name, field, digest in (
-        ("draft_qc.json", "inputs_sha256", json_hash({
-            "script": script.model_dump(mode="json", exclude_none=True),
-            "storyboard": store.read_artifact(job.id, "storyboard.json"),
-        })),
+        ("draft_qc.json", "inputs_sha256", review_fingerprint(
+            script.model_dump(mode="json", exclude_none=True),
+            store.read_artifact(job.id, "storyboard.json"),
+        )),
         ("metadata.json", "script_sha256", digest),
     ):
         record = store.read_artifact(job.id, name)

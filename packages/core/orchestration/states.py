@@ -39,18 +39,31 @@ TRANSITIONS: dict[JobState, set[JobState]] = {
         JobState.CANCELLED,
         JobState.BLOCKED,
     },
-    JobState.STORYBOARD_READY: {JobState.ASSETS_READY, JobState.FAILED, JobState.CANCELLED, JobState.BLOCKED},
+    JobState.STORYBOARD_READY: {
+        JobState.ASSETS_READY,
+        JobState.SCRIPT_GENERATED,  # content revision: a storyboard that fails the draft gate may re-script
+        JobState.FAILED,
+        JobState.CANCELLED,
+        JobState.BLOCKED,
+    },
     JobState.ASSETS_READY: {JobState.AUDIO_READY, JobState.FAILED, JobState.CANCELLED, JobState.BLOCKED},
     JobState.AUDIO_READY: {JobState.RENDERING, JobState.FAILED, JobState.CANCELLED, JobState.BLOCKED},
     JobState.RENDERING: {JobState.TECHNICAL_QC, JobState.FAILED, JobState.CANCELLED, JobState.BLOCKED},
     JobState.TECHNICAL_QC: {JobState.EDITORIAL_QC, JobState.RENDERING, JobState.FAILED, JobState.CANCELLED, JobState.BLOCKED},
     JobState.EDITORIAL_QC: {JobState.READY_FOR_APPROVAL, JobState.REJECTED, JobState.FAILED, JobState.CANCELLED, JobState.BLOCKED},
     JobState.READY_FOR_APPROVAL: {JobState.APPROVED, JobState.REJECTED, JobState.CANCELLED},
-    JobState.APPROVED: {JobState.PRIVATE_UPLOAD, JobState.CANCELLED},
+    JobState.APPROVED: {
+        JobState.PRIVATE_UPLOAD,
+        # A renderer fix can invalidate approved media (the render hash is part of the
+        # approval fingerprint). Re-rendering must pass QC and the editorial gate again
+        # and then require a fresh operator approval; it cannot skip either.
+        JobState.RENDERING,
+        JobState.CANCELLED,
+    },
     JobState.PRIVATE_UPLOAD: {JobState.SCHEDULED, JobState.PUBLISHED, JobState.FAILED, JobState.CANCELLED, JobState.BLOCKED},
     JobState.SCHEDULED: {JobState.PUBLISHED, JobState.CANCELLED, JobState.FAILED},
     JobState.PUBLISHED: set(),
-    JobState.FAILED: {JobState.IDEA_DISCOVERY},  # retry from earliest incomplete stage
+    JobState.FAILED: {JobState.IDEA_DISCOVERY, JobState.BLOCKED},  # retry, or block when the attempt cap is reached
     JobState.CANCELLED: set(),
     JobState.REJECTED: {JobState.IDEA_DISCOVERY},
     JobState.BLOCKED: {JobState.IDEA_DISCOVERY, JobState.CANCELLED},
