@@ -12,6 +12,8 @@ from typing import Any, Callable, Iterator, Protocol
 from pydantic import ValidationError
 
 from ..media.contracts import RenderArtifact
+from ..media.process import checked_path, sha256_file
+from ..media.thumbnail import wide_thumbnail
 from ..orchestration.jobstore import JobStore
 from ..orchestration.states import JobState, can_transition
 from ..schemas import VideoMetadata
@@ -19,6 +21,18 @@ from .contracts import PublishingArtifact, RemoteVideo, UploadOptions, UploadPro
 from .errors import PublishingError, RemoteError
 
 CHUNK_UNIT = 256 * 1024
+
+# Kegagalan yang pasti terjadi sebelum request apa pun dikirim ke Google.
+# Aman diulang setelah operator memperbaikinya; tidak boleh mengunci job.
+PRE_FLIGHT_ERRORS = frozenset({
+    "oauth_not_connected",
+    "oauth_token_expired",
+    "oauth_reconnect_required",
+    "network_permission_required",
+    "installed_client_required",
+    "installed_client_invalid",
+    "protected_data_invalid",
+})
 
 
 class YouTubeGateway(Protocol):
@@ -30,6 +44,8 @@ class YouTubeGateway(Protocol):
     def read_video(self, video_id: str, *, allow_read: bool) -> RemoteVideo: ...
     def update_status(self, video: RemoteVideo, *, privacy_status: str, publish_at: datetime | None,
                       allow_change: bool) -> None: ...
+    def set_thumbnail(self, video_id: str, image: bytes, *, allow_upload: bool) -> None: ...
+    def read_channel(self, *, allow_read: bool) -> dict[str, str]: ...
 
 
 class SessionStore(Protocol):
@@ -169,6 +185,22 @@ class PublishingService:
         self._save(job_id, token, artifact, phase="uncertain", error_code="manual_reconciliation_required")
         raise PublishingError("manual_reconciliation_required")
 
+    def _preflight_failed(self, job_id: str, token: str, artifact: PublishingArtifact,
+                          error: PublishingError) -> None:
+        """Kegagalan sebelum request keluar: catat, tapi jangan kunci job.
+
+        `initiate_private` bisa gagal sebelum satu byte pun dikirim ke Google —
+        OAuth belum tersambung, token kedaluwarsa, izin jaringan mati. Tidak ada
+        sesi upload yang mungkin tercipta di sisi remote, jadi tidak ada yang
+        perlu direkonsiliasi: operator tinggal menyambungkan OAuth lalu mengulang.
+
+        Menandai kasus ini `uncertain` membuat job terkunci permanen tanpa sebab
+        nyata — record `uncertain` menolak semua percobaan berikutnya, padahal
+        nol request pernah meninggalkan mesin ini.
+        """
+        self._save(job_id, token, artifact, phase="initiating", error_code=error.code)
+        raise error
+
     def _recovery(self, job_id: str, token: str, artifact: PublishingArtifact) -> PublishingArtifact:
         artifact = self._save(job_id, token, artifact, retry_count=artifact.retry_count + 1)
         if artifact.retry_count >= self.max_recoveries:
@@ -207,6 +239,16 @@ class PublishingService:
                 if artifact.video_id:
                     return self._complete_private(job_id, token, artifact)
             session = self.sessions.read(f"session-{job_id}")
+            # Record yang berhenti karena kegagalan pre-flight tidak punya sesi
+            # remote sama sekali: tidak ada upload_id yang bisa dilanjutkan.
+            # Tanpa ini, cabang `else` di bawah melihat `session is None` lalu
+            # mengunci job sebagai `uncertain` — persis yang membuat job tidak
+            # bisa diulang setelah OAuth disambungkan.
+            if (artifact is not None and artifact.video_id is None
+                    and artifact.phase == "initiating"
+                    and artifact.error_code in PRE_FLIGHT_ERRORS
+                    and session is None):
+                artifact = None
             if artifact is None:
                 if session is not None or self.store.get(job_id).payload.get("youtube_video_id"):
                     raise PublishingError("manual_reconciliation_required")
@@ -222,7 +264,14 @@ class PublishingService:
                     uri = self.gateway.initiate_private(metadata, total, options, allow_upload=True)
                     session = {"session_uri": uri, "media_sha256": checksum, "total_bytes": total}
                     self.sessions.write(f"session-{job_id}", session)
-                except (PublishingError, ValueError, OSError):
+                except PublishingError as exc:
+                    # PRE_FLIGHT: nol request keluar, aman diulang setelah operator
+                    # memperbaiki penyebabnya. Sisanya ambigu: sesi mungkin sudah
+                    # tercipta di remote, jadi wajib rekonsiliasi.
+                    if exc.code in PRE_FLIGHT_ERRORS:
+                        self._preflight_failed(job_id, token, artifact, exc)
+                    self._uncertain(job_id, token, artifact)
+                except (ValueError, OSError):
                     self._uncertain(job_id, token, artifact)
                 artifact = self._save(job_id, token, artifact, phase="uploading")
             else:
@@ -290,7 +339,61 @@ class PublishingService:
                             checked_at=self.clock(), publish_at=None, error_code=None)
         self._transition(job_id, token, JobState.PRIVATE_UPLOAD, result)
         self.sessions.delete(f"session-{job_id}")
+        if result.thumbnail_uploaded_at is None:
+            self._upload_thumbnail(job_id, token, result)
         return result
+
+    def _thumbnail_bytes(self, job_id: str, token: str) -> bytes | None:
+        """Bytes thumbnail 16:9, atau None bila job tidak punya konsep thumbnail."""
+        self._touch(job_id, token)
+        try:
+            from ..media.contracts import ThumbnailArtifact
+            artifact = ThumbnailArtifact.model_validate(self.store.read_artifact(job_id, "thumbnail.json"))
+        except (OSError, ValueError, KeyError):
+            return None
+        root = self.store.artifact_root(job_id).resolve()
+        try:
+            source = checked_path(root, artifact.output_path)
+        except ValueError:
+            raise PublishingError("approved_media_invalid") from None
+        if source.is_symlink() or not source.resolve().is_relative_to(root) or not source.is_file():
+            raise PublishingError("approved_media_invalid")
+        if sha256_file(source) != artifact.sha256:
+            raise PublishingError("approved_media_invalid")
+        target = root / "thumbnail-wide.png"
+        if not target.is_file():
+            try:
+                wide_thumbnail(source, target)
+            except (OSError, ValueError):
+                raise PublishingError("thumbnail_render_failed") from None
+        return target.read_bytes()
+
+    def _upload_thumbnail(self, job_id: str, token: str, artifact: PublishingArtifact) -> None:
+        """Unggah thumbnail 16:9. Kegagalan di sini tidak membatalkan upload video."""
+        try:
+            image = self._thumbnail_bytes(job_id, token)
+            if image is None:
+                return
+            self._touch(job_id, token)
+            self.gateway.set_thumbnail(artifact.video_id, image, allow_upload=True)
+        except (PublishingError, RemoteError, OSError, ValueError, KeyError):
+            # The video is already verified private; a thumbnail problem is recorded,
+            # never re-raised, so a lost image cannot make a good upload look failed.
+            self._save(job_id, token, artifact, error_code="thumbnail_upload_failed")
+            return
+        self._save(job_id, token, artifact, thumbnail_sha256=hashlib.sha256(image).hexdigest(),
+                   thumbnail_uploaded_at=self.clock(), error_code=None)
+
+    def upload_thumbnail(self, job_id: str, *, allow_upload: bool) -> PublishingArtifact:
+        if allow_upload is not True:
+            raise PublishingError("upload_permission_required")
+        with self._lease(job_id) as token:
+            self._authorize(job_id)
+            artifact = self._load(job_id)
+            if artifact is None or not artifact.video_id or artifact.phase != "private":
+                raise PublishingError("verified_private_upload_required")
+            self._upload_thumbnail(job_id, token, artifact)
+            return self._load(job_id)
 
     def _transition(self, job_id: str, token: str, state: JobState, artifact: PublishingArtifact) -> None:
         self._touch(job_id, token)

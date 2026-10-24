@@ -959,3 +959,370 @@ def test_media_mutation_after_session_initiation_prevents_transfer(tmp_path, mon
     with pytest.raises(PublishingError, match="manual_reconciliation_required"):
         service.upload_private(job_id, options, allow_upload=True)
     assert [r.method for r in requests] == ["POST"]
+
+
+def _png_bytes(width=1, height=1):
+    import struct
+    import zlib
+
+    def chunk(kind, payload):
+        body = kind + payload
+        return struct.pack(">I", len(payload)) + body + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
+
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    raw = b"".join(b"\x00" + bytes((10, 20, 30)) * width for _ in range(height))
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(raw))
+            + chunk(b"IEND", b""))
+
+
+def _thumbnail_service(tmp_path, monkeypatch, handler, *, wide=None, **kwargs):
+    """_service plus a valid thumbnail.json so the publishing boundary can find one."""
+    import hashlib
+    from packages.core.media.contracts import ThumbnailArtifact
+    from packages.core.publishing import service as module
+
+    image = wide or _png_bytes(2, 2)
+    service, store, job_id, options, secret = _service(tmp_path, monkeypatch, handler, **kwargs)
+    source = store.artifact_root(job_id) / "thumbnail.png"
+    source.write_bytes(_png_bytes(1, 1))
+    store.write_artifact(job_id, "thumbnail.json", ThumbnailArtifact(
+        output_path="thumbnail.png", sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
+        storyboard_sha256="b" * 64, metadata_sha256="c" * 64, assets_sha256="d" * 64,
+        scene_id="scene-1", frame=1).model_dump(mode="json"))
+    # FFmpeg is a real external boundary; the unit test replaces only the transcode.
+    monkeypatch.setattr(module, "wide_thumbnail", lambda _source, target: target.write_bytes(image) or target)
+    return service, store, job_id, options, secret, image
+
+
+def test_thumbnail_adapter_rejects_bad_input_before_any_http(tmp_path):
+    import httpx
+    from packages.core.publishing.errors import RemoteError
+
+    requests = []
+    adapter, _ = _adapter(tmp_path, lambda request: requests.append(request) or httpx.Response(200))
+    with pytest.raises(PublishingError, match="thumbnail_too_large"):
+        adapter.set_thumbnail("testvid0001", b"x" * (2 * 1024 * 1024 + 1), allow_upload=True)
+    with pytest.raises(PublishingError, match="thumbnail_type_invalid"):
+        adapter.set_thumbnail("testvid0001", b"not-an-image", allow_upload=True)
+    with pytest.raises(PublishingError, match="upload_permission_required"):
+        adapter.set_thumbnail("testvid0001", _png_bytes(), allow_upload=False)
+    with pytest.raises(RemoteError, match="remote_video_id_invalid"):
+        adapter.set_thumbnail("short", _png_bytes(), allow_upload=True)
+    assert requests == []
+
+
+def test_thumbnail_adapter_posts_png_media_once(tmp_path):
+    import httpx
+
+    requests = []
+    adapter, _ = _adapter(tmp_path, lambda request: requests.append(request) or httpx.Response(200))
+    adapter.set_thumbnail("testvid0001", _png_bytes(), allow_upload=True)
+    assert len(requests) == 1
+    request = requests[0]
+    assert request.method == "POST"
+    assert "/upload/youtube/v3/thumbnails/set" in str(request.url)
+    assert request.url.params["videoId"] == "testvid0001"
+    assert request.url.params["uploadType"] == "media"
+    assert request.headers["Content-Type"] == "image/png"
+    assert request.headers["Authorization"].startswith("Bearer ")
+
+
+def test_thumbnail_adapter_rejects_channel_that_is_not_exactly_one(tmp_path):
+    import httpx
+    from packages.core.publishing.errors import RemoteError
+
+    adapter, _ = _adapter(tmp_path, lambda _: httpx.Response(200, json={"items": []}))
+    with pytest.raises(RemoteError, match="remote_channel_invalid"):
+        adapter.read_channel(allow_read=True)
+    adapter, _ = _adapter(tmp_path, lambda _: httpx.Response(200, json={"items": [
+        {"id": "c1", "snippet": {"title": "a"}}, {"id": "c2", "snippet": {"title": "b"}}]}))
+    with pytest.raises(RemoteError, match="remote_channel_invalid"):
+        adapter.read_channel(allow_read=True)
+
+
+def test_private_upload_sets_thumbnail_once_and_is_idempotent(tmp_path, monkeypatch):
+    import hashlib
+    import httpx
+    from packages.core.orchestration import JobState
+
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        if "/thumbnails/set" in str(request.url):
+            return httpx.Response(200)
+        return _successful_http(request)
+
+    service, store, job_id, options, _, image = _thumbnail_service(tmp_path, monkeypatch, handler)
+    result = service.upload_private(job_id, options, allow_upload=True)
+    assert result.phase == "private"
+    assert store.get(job_id).state is JobState.PRIVATE_UPLOAD
+    stored = store.read_artifact(job_id, "publishing.json")
+    assert stored["thumbnail_sha256"] == hashlib.sha256(image).hexdigest()
+    assert stored["thumbnail_uploaded_at"]
+    assert "error_code" not in stored
+    assert service.upload_private(job_id, options, allow_upload=True).phase == "private"
+    assert sum("/thumbnails/set" in str(request.url) for request in requests) == 1
+    assert sum(request.method == "POST" and "/upload/youtube/v3/videos" in str(request.url)
+               for request in requests) == 1
+
+
+def test_thumbnail_failure_does_not_fail_the_private_upload(tmp_path, monkeypatch):
+    import httpx
+    from packages.core.orchestration import JobState
+
+    def handler(request):
+        if "/thumbnails/set" in str(request.url):
+            return httpx.Response(403, json={"error": "forbidden"})
+        return _successful_http(request)
+
+    service, store, job_id, options, _, _ = _thumbnail_service(tmp_path, monkeypatch, handler)
+    result = service.upload_private(job_id, options, allow_upload=True)
+    assert result.phase == "private"
+    assert store.get(job_id).state is JobState.PRIVATE_UPLOAD
+    stored = store.read_artifact(job_id, "publishing.json")
+    assert stored.get("thumbnail_sha256") is None
+    assert "thumbnail_uploaded_at" not in stored
+    assert stored["error_code"] == "thumbnail_upload_failed"
+    # A retry only re-runs the thumbnail step; the video is never inserted again.
+    retried = service.upload_thumbnail(job_id, allow_upload=True)
+    assert retried.error_code == "thumbnail_upload_failed"
+
+
+def test_upload_thumbnail_requires_a_verified_private_upload(tmp_path, monkeypatch):
+    service, _, job_id, options, _, _ = _thumbnail_service(
+        tmp_path, monkeypatch, lambda _: pytest.fail("no HTTP"))
+    with pytest.raises(PublishingError, match="verified_private_upload_required"):
+        service.upload_thumbnail(job_id, allow_upload=True)
+    with pytest.raises(PublishingError, match="upload_permission_required"):
+        service.upload_thumbnail(job_id, allow_upload=False)
+
+
+def test_cli_check_reports_channel_and_scope_without_writing(tmp_path, monkeypatch, capsys):
+    import httpx
+    import time
+    from scripts.publish import main
+
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200, json={"items": [{"id": "UCoffline", "snippet": {"title": "Kanal Offline"}}]})
+
+    _, _, _, _, secret = _service(tmp_path, monkeypatch, handler, db_path=tmp_path / "jobs" / "factory.db")
+    secret.write("client", {"installed": {"client_id": "offline-client", "client_secret": "offline-secret"}})
+    secret.write("tokens", {"access_token": "offline-access", "refresh_token": "offline-refresh",
+                             "expires_at": time.time() + 3600})
+    result = main(["--check", "--data-root", str(tmp_path), "--config-dir", str(secret.root)],
+                  http_factory=lambda: httpx.Client(transport=httpx.MockTransport(handler)),
+                  browser_open=lambda _: pytest.fail("--check must never start OAuth"))
+    assert result == 0
+    body = json.loads(capsys.readouterr().out)
+    assert body == {"client": "ok", "channel": {"id": "UCoffline", "title": "Kanal Offline"},
+                    "scope": "https://www.googleapis.com/auth/youtube.force-ssl"}
+    assert [request.method for request in requests] == ["GET"]
+    assert all("thumbnails" not in str(request.url) for request in requests)
+
+
+def test_cli_check_without_client_fails_before_any_http(tmp_path, capsys):
+    import httpx
+    from scripts.publish import main
+
+    result = main(["--check", "--data-root", str(tmp_path), "--config-dir", str(tmp_path / "config")],
+                  http_factory=lambda: httpx.Client(transport=httpx.MockTransport(
+                      lambda _: pytest.fail("no HTTP without a client"))),
+                  browser_open=lambda _: pytest.fail("no browser"))
+    assert result == 1
+    assert json.loads(capsys.readouterr().err) == {"error": "installed_client_not_configured"}
+
+
+def test_cli_thumbnail_only_retries_the_image_upload(tmp_path, monkeypatch, capsys):
+    import httpx
+    import time
+    from packages.core import approval
+    from scripts.publish import main
+
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        if "/thumbnails/set" in str(request.url):
+            return httpx.Response(200)
+        return _successful_http(request)
+
+    service, store, job_id, options, secret, _ = _thumbnail_service(
+        tmp_path, monkeypatch, handler, db_path=tmp_path / "jobs" / "factory.db")
+    service.upload_private(job_id, options, allow_upload=True)
+    requests.clear()
+    monkeypatch.setattr(approval, "require_eligible", lambda *_: None)
+    monkeypatch.setattr(approval, "approval_fingerprint", lambda *_: "a" * 64)
+    secret.write("client", {"installed": {"client_id": "offline-client", "client_secret": "offline-secret"}})
+    secret.write("tokens", {"access_token": "offline-access", "refresh_token": "offline-refresh",
+                             "expires_at": time.time() + 3600})
+    result = main(["--thumbnail", job_id, "--data-root", str(tmp_path), "--config-dir", str(secret.root)],
+                  http_factory=lambda: httpx.Client(transport=httpx.MockTransport(handler)),
+                  browser_open=lambda _: pytest.fail("thumbnail retry must never start OAuth"))
+    assert result == 0
+    assert json.loads(capsys.readouterr().out)["thumbnail_sha256"]
+    assert [request.method for request in requests] == ["POST"]
+    assert "/thumbnails/set" in str(requests[0].url)
+
+
+def test_tampered_thumbnail_never_fails_the_verified_video_upload(tmp_path, monkeypatch):
+    from packages.core.orchestration import JobState
+
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        return _successful_http(request)
+
+    service, store, job_id, options, _, _ = _thumbnail_service(tmp_path, monkeypatch, handler)
+    (store.artifact_root(job_id) / "thumbnail.png").write_bytes(_png_bytes(3, 3))
+    result = service.upload_private(job_id, options, allow_upload=True)
+    assert result.phase == "private"
+    assert store.get(job_id).state is JobState.PRIVATE_UPLOAD
+    stored = store.read_artifact(job_id, "publishing.json")
+    assert stored.get("thumbnail_sha256") is None
+    assert stored["error_code"] == "thumbnail_upload_failed"
+    assert all("/thumbnails/set" not in str(request.url) for request in requests)
+
+
+def test_thumbnail_artifact_pointing_outside_the_job_is_recorded_not_raised(tmp_path, monkeypatch):
+    import hashlib
+    from packages.core.media.contracts import ThumbnailArtifact
+    from packages.core.orchestration import JobState
+
+    def handler(request):
+        return _successful_http(request)
+
+    service, store, job_id, options, _, _ = _thumbnail_service(tmp_path, monkeypatch, handler)
+    store.write_artifact(job_id, "thumbnail.json", ThumbnailArtifact(
+        output_path="../escape.png", sha256=hashlib.sha256(b"x").hexdigest(),
+        storyboard_sha256="b" * 64, metadata_sha256="c" * 64, assets_sha256="d" * 64,
+        scene_id="scene-1", frame=1).model_dump(mode="json"))
+    result = service.upload_private(job_id, options, allow_upload=True)
+    assert result.phase == "private"
+    assert store.get(job_id).state is JobState.PRIVATE_UPLOAD
+    assert store.read_artifact(job_id, "publishing.json")["error_code"] == "thumbnail_upload_failed"
+
+
+def test_cli_thumbnail_reports_failure_instead_of_claiming_success(tmp_path, monkeypatch, capsys):
+    import httpx
+    import time
+    from packages.core import approval
+    from scripts.publish import main
+
+    def handler(request):
+        if "/thumbnails/set" in str(request.url):
+            return httpx.Response(403, json={"error": "forbidden"})
+        return _successful_http(request)
+
+    service, store, job_id, options, secret, _ = _thumbnail_service(
+        tmp_path, monkeypatch, handler, db_path=tmp_path / "jobs" / "factory.db")
+    service.upload_private(job_id, options, allow_upload=True)
+    monkeypatch.setattr(approval, "require_eligible", lambda *_: None)
+    monkeypatch.setattr(approval, "approval_fingerprint", lambda *_: "a" * 64)
+    secret.write("client", {"installed": {"client_id": "offline-client", "client_secret": "offline-secret"}})
+    secret.write("tokens", {"access_token": "offline-access", "refresh_token": "offline-refresh",
+                             "expires_at": time.time() + 3600})
+    result = main(["--thumbnail", job_id, "--data-root", str(tmp_path), "--config-dir", str(secret.root)],
+                  http_factory=lambda: httpx.Client(transport=httpx.MockTransport(handler)),
+                  browser_open=lambda _: pytest.fail("no OAuth"))
+    assert result == 1
+    assert json.loads(capsys.readouterr().err) == {"error": "thumbnail_upload_failed"}
+
+
+def test_installed_client_accepts_the_official_v1_authorization_uri(tmp_path):
+    """Downloaded Google client secrets still carry the v1 consent URI."""
+    from packages.core.publishing.oauth import AUTHORIZATION_ENDPOINT, InstalledClient
+
+    client = InstalledClient.from_data({"installed": {
+        "client_id": "offline-client", "client_secret": "offline-secret",
+        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+        "token_uri": "https://oauth2.googleapis.com/token",
+        "redirect_uris": ["http://localhost"]}})
+    assert client.client_id == "offline-client"
+    # The flow always builds its own v2 URL, never the file's auth_uri.
+    flow, _, _ = _oauth(tmp_path, lambda _: pytest.fail("no HTTP"))
+    auth = flow.begin("http://127.0.0.1:49152/oauth2/callback", allow_connect=True)
+    assert auth.authorization_url.startswith(AUTHORIZATION_ENDPOINT + "?")
+
+
+def test_installed_client_rejects_foreign_authorization_or_token_endpoint(tmp_path):
+    from packages.core.publishing.oauth import InstalledClient
+
+    base = {"client_id": "offline-client", "client_secret": "offline-secret",
+            "auth_uri": "https://accounts.google.com/o/oauth2/v2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token"}
+    for override in ({"auth_uri": "https://evil.invalid/o/oauth2/auth"},
+                     {"auth_uri": "http://accounts.google.com/o/oauth2/auth"},
+                     {"token_uri": "https://evil.invalid/token"}):
+        with pytest.raises(PublishingError, match="installed_client_endpoint_invalid"):
+            InstalledClient.from_data({"installed": base | override})
+
+
+def _drop_tokens(secret) -> None:
+    """Simulasikan OAuth yang belum pernah tersambung.
+
+    `_service` menanam token supaya tes lain bisa bicara HTTP. Pre-flight justru
+    perlu keadaan sebaliknya, jadi token dihapus dari protected store.
+    """
+    path = secret.root / "tokens.json"
+    path.unlink(missing_ok=True)
+
+
+def test_missing_oauth_does_not_lock_the_job_permanently(tmp_path, monkeypatch):
+    """Gagal karena OAuth belum tersambung bukan alasan mengunci job.
+
+    Kasus nyata: operator menjalankan --upload sebelum --connect. Nol request
+    keluar dari mesin ini, jadi tidak ada sesi remote yang perlu direkonsiliasi.
+    Perilaku lama menandai record `uncertain`, dan `uncertain` menolak semua
+    percobaan berikutnya — job mustahil diunggah walau OAuth kemudian
+    disambungkan. Kode error aslinya juga tertelan menjadi
+    manual_reconciliation_required sehingga penyebabnya tidak terlihat.
+    """
+    service, store, job_id, options, secret = _service(tmp_path, monkeypatch, _successful_http)
+    _drop_tokens(secret)
+
+    with pytest.raises(PublishingError) as caught:
+        service.upload_private(job_id, options, allow_upload=True)
+    assert caught.value.code == "oauth_not_connected"
+
+    record = store.read_artifact(job_id, "publishing.json")
+    assert record["phase"] != "uncertain", "pre-flight failure must not lock the job"
+    assert record["error_code"] == "oauth_not_connected"
+
+
+def test_preflight_failure_allows_retry_after_oauth_is_connected(tmp_path, monkeypatch):
+    """Setelah OAuth tersambung, job yang gagal pre-flight bisa diunggah."""
+    service, store, job_id, options, secret = _service(tmp_path, monkeypatch, _successful_http)
+    _drop_tokens(secret)
+
+    with pytest.raises(PublishingError) as caught:
+        service.upload_private(job_id, options, allow_upload=True)
+    assert caught.value.code == "oauth_not_connected"
+
+    # Operator menyambungkan OAuth, lalu mengulang perintah yang sama.
+    secret.write("tokens", {"access_token": "offline-access", "refresh_token": "offline-refresh",
+                            "expires_at": 4600.0})
+    result = service.upload_private(job_id, options, allow_upload=True)
+    assert result.video_id == "testvid0001"
+
+
+def test_ambiguous_initiation_still_requires_reconciliation(tmp_path, monkeypatch):
+    """Kegagalan ambigu tetap wajib rekonsiliasi: itu perilaku yang benar.
+
+    Timeout setelah request terkirim bisa berarti sesi sudah tercipta di remote.
+    Mengulanginya buta akan membuat video ganda, jadi `uncertain` harus tetap.
+    """
+    import httpx
+
+    def handler(request):
+        raise httpx.ReadTimeout("upstream silent")
+
+    service, store, job_id, options, _ = _service(tmp_path, monkeypatch, handler)
+
+    with pytest.raises(PublishingError, match="manual_reconciliation_required"):
+        service.upload_private(job_id, options, allow_upload=True)
+    assert store.read_artifact(job_id, "publishing.json")["phase"] == "uncertain"
