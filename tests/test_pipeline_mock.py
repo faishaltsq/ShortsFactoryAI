@@ -1,5 +1,6 @@
 import json
 
+from packages.core.approval import review_fingerprint
 from packages.core.config import get_settings
 from packages.core.orchestration import JobState, JobStore
 from packages.core.pipeline import PipelineRunner
@@ -186,8 +187,8 @@ def test_draft_cache_binds_review_and_metadata_to_inputs(tmp_path, monkeypatch):
     assert runner.run(job.id).ok
     script = Script.model_validate(store.read_artifact(job.id, "script.json"))
     storyboard = Storyboard.model_validate(store.read_artifact(job.id, "storyboard.json"))
-    expected = json_hash({"script": script.model_dump(mode="json", exclude_none=True),
-                          "storyboard": storyboard.model_dump(mode="json", exclude_none=True)})
+    expected = review_fingerprint(script.model_dump(mode="json", exclude_none=True),
+                                  storyboard.model_dump(mode="json", exclude_none=True))
     assert store.read_artifact(job.id, "draft_qc.json")["inputs_sha256"] == expected
     assert store.read_artifact(job.id, "metadata.json")["script_sha256"] == json_hash(
         script.model_dump(mode="json", exclude_none=True))

@@ -40,7 +40,8 @@ def test_seven_day_plan_persists_rotation_jobs_and_idempotency(tmp_path):
         assert (store.artifact_root(job.id) / "job.json").is_file()
     reopened = JobStore(store.db_path, store.artifacts_root, clock=clock)
     restored = ProductionPlanner(reopened).plan_seven_days(start=start, videos_per_day=2,
-                                                          genres=["science", "history", "fiction"], retry_base_s=60.0)
+                                                          genres=["science", "history", "fiction"],
+                                                          provider_mode="mock", retry_base_s=60.0)
     assert restored == plan
     assert len(reopened.list()) == 14
 
@@ -539,3 +540,124 @@ def test_tick_rejects_unbounded_or_nonpositive_limits(tmp_path):
     for limit in (0, -1, True, 1001):
         with pytest.raises(ValueError, match="limit"):
             scheduler.tick(limit=limit)
+
+
+def test_planner_posting_times_place_slots_on_fixed_local_hours(tmp_path):
+    from packages.core.orchestration.planner import ProductionPlanner
+
+    start = datetime(2026, 11, 1, tzinfo=timezone(timedelta(hours=7)))
+    store = JobStore(tmp_path / "factory.db", tmp_path / "jobs")
+    plan = ProductionPlanner(store).plan_seven_days(
+        start=start, videos_per_day=3, genres=["science"], days=2,
+        posting_times=["07:00", "12:00", "19:00"], provider_mode="mock")
+    assert len(plan.slots) == 6
+    assert [slot.due_at for slot in plan.slots[:3]] == [
+        "2026-11-01T00:00:00+00:00", "2026-11-01T05:00:00+00:00", "2026-11-01T12:00:00+00:00"]
+    assert [slot.due_at for slot in plan.slots[3:]] == [
+        "2026-11-02T00:00:00+00:00", "2026-11-02T05:00:00+00:00", "2026-11-02T12:00:00+00:00"]
+    assert [slot.day_index for slot in plan.slots] == [0, 0, 0, 1, 1, 1]
+
+
+def test_planner_posting_times_and_days_are_validated_before_writing(tmp_path):
+    import pytest
+    from packages.core.orchestration.planner import ProductionPlanner
+
+    store = JobStore(tmp_path / "factory.db", tmp_path / "jobs")
+    planner = ProductionPlanner(store)
+    start = datetime(2026, 11, 1, tzinfo=timezone(timedelta(hours=7)))
+    options = {"start": start, "videos_per_day": 2, "genres": ["science"]}
+    for invalid, message in (
+            ({"posting_times": ["07:00"]}, "posting_times must have one HH:MM entry per daily video"),
+            ({"posting_times": ["25:00", "07:00"]}, "posting_times entries must be HH:MM in 24-hour form"),
+            ({"posting_times": "07:00"}, "posting_times must have one HH:MM entry per daily video"),
+            ({"days": 0}, "days must be an integer from 1 to 30"),
+            ({"days": 31}, "days must be an integer from 1 to 30"),
+            ({"days": True}, "days must be an integer from 1 to 30")):
+        with pytest.raises(ValueError, match=message):
+            planner.plan_seven_days(**(options | invalid))
+        assert not store.list()
+
+
+def test_planner_identity_tracks_posting_times_and_stays_stable(tmp_path):
+    from packages.core.orchestration.planner import ProductionPlanner
+
+    start = datetime(2026, 11, 1, tzinfo=timezone(timedelta(hours=7)))
+    options = {"start": start, "videos_per_day": 2, "genres": ["science"], "days": 2,
+               "provider_mode": "mock"}
+    first = JobStore(tmp_path / "a" / "factory.db", tmp_path / "a" / "jobs")
+    morning = ProductionPlanner(first).plan_seven_days(posting_times=["07:00", "12:00"], **options)
+    assert ProductionPlanner(first).plan_seven_days(posting_times=["07:00", "12:00"], **options) == morning
+    other = JobStore(tmp_path / "b" / "factory.db", tmp_path / "b" / "jobs")
+    evening = ProductionPlanner(other).plan_seven_days(posting_times=["19:00", "21:00"], **options)
+    assert evening.id != morning.id
+    assert len(evening.slots) == len(morning.slots) == 4
+
+
+def test_planner_without_posting_times_keeps_the_even_split(tmp_path):
+    from packages.core.orchestration.planner import ProductionPlanner
+
+    start = datetime(2026, 11, 1, tzinfo=timezone(timedelta(hours=7)))
+    store = JobStore(tmp_path / "factory.db", tmp_path / "jobs")
+    plan = ProductionPlanner(store).plan_seven_days(
+        start=start, videos_per_day=2, genres=["science"], days=1, provider_mode="mock")
+    assert [slot.due_at for slot in plan.slots] == [
+        "2026-10-31T17:00:00+00:00", "2026-11-01T05:00:00+00:00"]
+
+
+def _scheduler_jobs(tmp_path, states):
+    store = JobStore(tmp_path / "factory.db", tmp_path / "jobs")
+    for index, state in enumerate(states):
+        store.create(title=f"Antrean {index}", state=state)
+    return store.list()
+
+
+def test_schedule_defaults_stop_at_approval_not_render(tmp_path):
+    from packages.core.orchestration.states import STOP_POINTS, JobState
+    from packages.core.scheduler import _effective, due_at
+    from packages.core.studio import ScheduleOverride
+
+    now = datetime(2026, 11, 1, 9, tzinfo=timezone.utc)
+    assert due_at(ScheduleOverride(enabled=True), [], now=now).due is True
+    config = _effective(ScheduleOverride(enabled=True))
+    assert config["stop"] == "approval"
+    assert STOP_POINTS[config["stop"]] is JobState.READY_FOR_APPROVAL
+    assert config["mode"] == "live"
+
+
+def test_schedule_pauses_when_review_queue_is_full(tmp_path):
+    from packages.core.orchestration.states import JobState
+    from packages.core.scheduler import due_at
+    from packages.core.studio import ScheduleOverride
+
+    now = datetime(2026, 11, 1, 9, tzinfo=timezone.utc)
+    jobs = _scheduler_jobs(tmp_path, [JobState.READY_FOR_APPROVAL] * 3)
+    plan = due_at(ScheduleOverride(enabled=True, max_pending_approval=3), jobs, now=now)
+    assert plan.due is False
+    assert "menunggu review (3/3)" in plan.reason
+    relaxed = due_at(ScheduleOverride(enabled=True, max_pending_approval=4), jobs, now=now)
+    assert relaxed.due is True
+    assert due_at(ScheduleOverride(enabled=True, max_pending_approval=0), jobs, now=now).due is True
+
+
+def test_schedule_respects_posting_hours(tmp_path):
+    from packages.core.scheduler import due_at
+    from packages.core.studio import ScheduleOverride
+
+    now = datetime(2026, 11, 1, 9, tzinfo=timezone.utc)
+    outside = due_at(ScheduleOverride(enabled=True, posting_hours=[7, 12, 19]), [], now=now)
+    assert outside.due is False
+    assert "di luar jam tayang" in outside.reason
+    inside = due_at(ScheduleOverride(enabled=True, posting_hours=[9]), [], now=now)
+    assert inside.due is True
+    assert due_at(ScheduleOverride(enabled=True, posting_hours=[]), [], now=now).due is True
+
+
+def test_schedule_override_rejects_unknown_posting_hours():
+    import pytest
+    from packages.core.studio import ScheduleOverride
+
+    with pytest.raises(ValueError, match="posting_hours"):
+        ScheduleOverride(posting_hours=[24])
+    with pytest.raises(ValueError, match="max_pending_approval"):
+        ScheduleOverride(max_pending_approval=-1)
+    assert ScheduleOverride(posting_hours=[19, 7, 7]).posting_hours == [7, 19]
