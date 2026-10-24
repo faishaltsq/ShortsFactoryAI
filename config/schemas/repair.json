@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "RepairAttempt": {
+      "properties": {
+        "attempt": {
+          "minimum": 1,
+          "title": "Attempt",
+          "type": "integer"
+        },
+        "source": {
+          "enum": [
+            "draft_qc",
+            "creative_review",
+            "evidence"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "findings": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Findings",
+          "type": "array"
+        },
+        "script_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Script Sha256",
+          "type": "string"
+        },
+        "created_at": {
+          "default": "",
+          "title": "Created At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "attempt",
+        "source",
+        "script_sha256"
+      ],
+      "title": "RepairAttempt",
+      "type": "object"
+    }
+  },
+  "description": "Bounded repair budget. Written before the model call, so a crash cannot reset it.",
+  "properties": {
+    "status": {
+      "default": "open",
+      "enum": [
+        "open",
+        "repaired",
+        "exhausted"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "max_attempts": {
+      "maximum": 5,
+      "minimum": 1,
+      "title": "Max Attempts",
+      "type": "integer"
+    },
+    "attempts": {
+      "items": {
+        "$ref": "#/$defs/RepairAttempt"
+      },
+      "title": "Attempts",
+      "type": "array"
+    }
+  },
+  "required": [
+    "max_attempts"
+  ],
+  "title": "RepairArtifact",
+  "type": "object"
+}

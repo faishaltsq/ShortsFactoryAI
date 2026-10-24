@@ -13,6 +13,13 @@
           },
           "title": "Unsupported Claims",
           "type": "array"
+        },
+        "findings": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Findings",
+          "type": "array"
         }
       },
       "required": [
@@ -59,7 +66,8 @@
       "$ref": "#/$defs/FactualSection"
     },
     "overall": {
-      "pattern": "^(pass|warn|fail)$",
+      "default": "",
+      "pattern": "^(pass|warn|fail)?$",
       "title": "Overall",
       "type": "string"
     }
@@ -67,8 +75,7 @@
   "required": [
     "technical",
     "editorial",
-    "factual",
-    "overall"
+    "factual"
   ],
   "title": "DraftQualityArtifact",
   "type": "object"

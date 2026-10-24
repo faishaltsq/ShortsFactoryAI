@@ -7,7 +7,7 @@ from functools import lru_cache
 
 from jsonschema import Draft202012Validator
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .media.contracts import (AssetManifest, AudioArtifact, AudioMixArtifact, RenderArtifact,
                               TechnicalQCArtifact, ThumbnailArtifact)
@@ -61,7 +61,40 @@ class DraftQualityArtifact(BaseModel):
     technical: ReviewSection
     editorial: ReviewSection
     factual: FactualSection
-    overall: str = Field(pattern="^(pass|warn|fail)$")
+    overall: str = Field(default="", pattern="^(pass|warn|fail)?$")
+
+    @model_validator(mode="after")
+    def _derive_overall(self) -> "DraftQualityArtifact":
+        """A model that omits `overall` must not fail the job; the verdict is derivable.
+
+        Any failing section is a fail. Otherwise the reviewer's own verdict stands,
+        or `pass` when it gave none. Nothing is upgraded to a pass.
+        """
+        if self.overall:
+            return self
+        sections = (self.technical, self.editorial, self.factual)
+        object.__setattr__(self, "overall", "fail" if not all(s.passed for s in sections) else "pass")
+        return self
+
+
+class RepairAttempt(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    attempt: int = Field(ge=1)
+    source: Literal["draft_qc", "creative_review", "evidence"]
+    findings: list[str] = Field(default_factory=list)
+    script_sha256: str = Field(pattern="^[0-9a-f]{64}$")
+    created_at: str = ""
+
+
+class RepairArtifact(BaseModel):
+    """Bounded repair budget. Written before the model call, so a crash cannot reset it."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    status: Literal["open", "repaired", "exhausted"] = "open"
+    max_attempts: int = Field(ge=1, le=5)
+    attempts: list[RepairAttempt] = Field(default_factory=list)
 
 
 class MetadataArtifact(VideoMetadata):
@@ -141,6 +174,7 @@ ARTIFACT_MODELS: dict[str, type[BaseModel]] = {
     "script.json": Script,
     "creative_draft.json": CreativeDraftArtifact,
     "review.json": ReviewArtifact,
+    "repair.json": RepairArtifact,
     "storyboard.json": Storyboard,
     "draft_qc.json": DraftQualityArtifact,
     "verification.json": VerificationArtifact,

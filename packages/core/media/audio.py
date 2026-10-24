@@ -10,6 +10,7 @@ from typing import Callable
 
 from ..providers.tts import EdgeTTSProvider
 from ..schemas import Script, Storyboard
+from ..storyboard_normalize import clamp_text_frames
 from .contracts import AssetManifest, AudioArtifact, AudioSegment
 from .assets import load_assets
 from .mix import mix_audio
@@ -48,7 +49,11 @@ def timeline_from_audio(storyboard: Storyboard, durations_ms: list[float], bound
         if not math.isfinite(duration) or duration <= 0:
             raise ValueError("audio duration must be positive and finite")
         frames = max(30, math.ceil(duration * storyboard.fps / 1000))
-        scenes.append({**scene.model_dump(mode="json", exclude_none=True), "startFrame": cursor, "durationInFrames": frames})
+        timed = {**scene.model_dump(mode="json", exclude_none=True), "startFrame": cursor, "durationInFrames": frames}
+        # The draft's text frames were clamped against the estimated duration; the
+        # measured narration changes it, so a stale outFrame would hide the text.
+        clamp_text_frames(timed)
+        scenes.append(timed)
         cues.extend(_group_words(words, duration, cursor * 1000 / storyboard.fps, index))
         cursor += frames
     data = storyboard.model_dump(mode="json", exclude_none=True)

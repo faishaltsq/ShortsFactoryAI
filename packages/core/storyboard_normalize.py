@@ -188,6 +188,174 @@ _PROP_KINDS = ("sun", "moon", "planet", "star", "cloud", "mountain", "tree",
 _FX_VALUES = ("lightRays", "dust", "stars", "speedLines", "impact", "vignette")
 
 
+def _number(value: Any) -> float | None:
+    """Parse a model-authored number, tolerating Indonesian decimal commas and units."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if not isinstance(value, str):
+        return None
+    text = value.strip().replace(" ", "")
+    if not text:
+        return None
+    # "15,3" -> "15.3"; "1.234,5" -> "1234.5"; "1,234.5" -> "1234.5"
+    if "," in text and "." in text:
+        text = text.replace(".", "").replace(",", ".") if text.rfind(",") > text.rfind(".") else text.replace(",", "")
+    else:
+        text = text.replace(",", ".")
+    match = re.search(r"-?\d+(?:\.\d+)?", text)
+    if match is None:
+        return None
+    try:
+        return float(match.group())
+    except ValueError:
+        return None
+
+
+def _text_of(value: Any, limit: int) -> str | None:
+    """Model text, tolerating a bare number where a year or label is expected."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        text = str(int(value)) if float(value).is_integer() else str(value)
+        return text[:limit]
+    if not isinstance(value, str):
+        return None
+    text = value.strip()[:limit].strip()
+    return text or None
+
+
+def _first_list(raw: dict[str, Any], keys: tuple[str, ...]) -> list:
+    for key in keys:
+        value = raw.get(key)
+        if isinstance(value, list) and value:
+            return value
+    return []
+
+
+def _normalize_infographic(raw: dict[str, Any]) -> dict[str, Any]:
+    """Map a model's infographic payload onto the strict contract; drop unknown fields."""
+    out: dict[str, Any] = {}
+    title = _text_of(_first(raw, ("title", "headline", "heading")), 70)
+    if title:
+        out["title"] = title
+    items: list[dict[str, Any]] = []
+    for entry in _first_list(raw, ("items", "metrics", "stats", "data", "values"))[:4]:
+        if isinstance(entry, dict):
+            label = _text_of(_first(entry, ("label", "name", "title", "metric", "caption")), 52)
+            value = _number(_first(entry, ("value", "amount", "number", "figure", "metric")))
+            unit = _text_of(_first(entry, ("unit", "suffix")), 16)
+        else:
+            label, value, unit = _text_of(entry, 52), _number(entry), None
+        if not label or value is None or value < 0 or value > 1e12:
+            continue
+        item: dict[str, Any] = {"label": label, "value": value}
+        if unit:
+            item["unit"] = unit
+        items.append(item)
+    if items:
+        out["items"] = items
+    max_value = _number(_first(raw, ("maxValue", "maximum", "scale_max", "max")))
+    if max_value is not None and 0 < max_value <= 1e12:
+        out["maxValue"] = max_value
+    decimals = _int(_first(raw, ("decimals", "precision", "decimal_places")))
+    if decimals is not None and 0 <= decimals <= 2:
+        out["decimals"] = decimals
+    return out
+
+
+def _normalize_timeline(raw: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    title = _text_of(_first(raw, ("title", "headline", "heading")), 70)
+    if title:
+        out["title"] = title
+    events: list[dict[str, Any]] = []
+    for entry in _first_list(raw, ("events", "moments", "timeline", "items"))[:4]:
+        if not isinstance(entry, dict):
+            continue
+        date = _text_of(_first(entry, ("date", "year", "when")), 24)
+        label = _text_of(_first(entry, ("label", "title", "event", "name", "text")), 70)
+        if not date or not label:
+            continue
+        event: dict[str, Any] = {"date": date, "label": label}
+        detail = _text_of(_first(entry, ("detail", "description", "body")), 100)
+        if detail:
+            event["detail"] = detail
+        events.append(event)
+    if events:
+        out["events"] = events
+    return out
+
+
+_PARALLAX_SHAPES = ("ridge", "city", "circle")
+
+
+def _normalize_parallax(raw: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    title = _text_of(_first(raw, ("title", "headline", "heading")), 70)
+    if title:
+        out["title"] = title
+    caption = _text_of(_first(raw, ("caption", "subtitle")), 160)
+    if caption:
+        out["caption"] = caption
+    layers: list[dict[str, Any]] = []
+    for entry in _first_list(raw, ("layers", "depth", "panes", "items"))[:4]:
+        if not isinstance(entry, dict):
+            continue
+        depth = _number(_first(entry, ("depth", "z", "level")))
+        shape = _alias({k: k for k in _PARALLAX_SHAPES},
+                       _first(entry, ("shape", "kind", "type")), "")
+        asset_ref = _text_of(_first(entry, ("assetRef", "asset", "image")), 200)
+        layer: dict[str, Any] = {"depth": max(0.1, min(1.0, depth if depth is not None else 0.5))}
+        if shape in _PARALLAX_SHAPES:
+            layer["shape"] = shape
+        elif asset_ref:
+            layer["assetRef"] = asset_ref
+        else:
+            continue  # a layer without exactly one visual cannot render
+        layers.append(layer)
+    if layers:
+        out["layers"] = layers
+    return out
+
+
+def _normalize_comic(raw: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    title = _text_of(_first(raw, ("title", "headline", "heading")), 70)
+    if title:
+        out["title"] = title
+    panels: list[dict[str, Any]] = []
+    for entry in _first_list(raw, ("panels", "frames", "items", "beats"))[:3]:
+        if not isinstance(entry, dict):
+            caption = _text_of(entry, 120)
+            if caption:
+                panels.append({"caption": caption})
+            continue
+        caption = _text_of(_first(entry, ("caption", "text", "line", "dialogue")), 120)
+        if not caption:
+            continue
+        panel: dict[str, Any] = {"caption": caption}
+        speaker = _text_of(_first(entry, ("speaker", "character", "who")), 32)
+        if speaker:
+            panel["speaker"] = speaker
+        asset_ref = _text_of(_first(entry, ("assetRef", "asset", "image")), 200)
+        if asset_ref:
+            panel["assetRef"] = asset_ref
+        panels.append(panel)
+    if panels:
+        out["panels"] = panels
+    return out
+
+
+_STRUCTURED_NORMALIZERS = {
+    "InfographicMotion": _normalize_infographic,
+    "HistoricalTimeline": _normalize_timeline,
+    "ParallaxStory": _normalize_parallax,
+    "MotionComic": _normalize_comic,
+}
+
+
 def _alias(table: dict[str, str], raw: Any, default: str) -> str:
     key = str(raw or "").strip().lower()
     if key in table:
@@ -319,6 +487,50 @@ def _normalize_duration(scene: dict[str, Any], segment: str, fps: int) -> int:
     return max(30, min(estimated, 3000))
 
 
+def _complete_structural_data(template: str, data: dict[str, Any], scene: dict[str, Any]) -> dict[str, Any] | None:
+    """Complete a decorative template from the narration the model already wrote.
+
+    Only fields that carry no factual claim may be synthesised: a parallax layer
+    shape and a comic caption both restate the scene's own text. Numbers and dates
+    are never invented, so InfographicMotion and HistoricalTimeline are not
+    completed here — those scenes degrade to a data-free template instead.
+    """
+    headline = _text_of(scene["text"][0]["text"], 70) if scene.get("text") else None
+    if template == "ParallaxStory":
+        title = data.get("title") or headline or _text_of(scene.get("segment"), 70)
+        if not title:
+            return None
+        out = {"title": title, "layers": data.get("layers") or [{"depth": 0.5, "shape": "ridge"}]}
+        if data.get("caption"):
+            out["caption"] = data["caption"]
+        return out
+    if template == "MotionComic":
+        panels = data.get("panels") or []
+        if not panels:
+            caption = headline or _text_of(scene.get("segment"), 120)
+            if not caption:
+                return None
+            panels = [{"caption": caption}]
+        out = {"panels": panels}
+        if data.get("title"):
+            out["title"] = data["title"]
+        return out
+    return None
+
+
+def _renderable(template: str, data: dict[str, Any] | None) -> bool:
+    """True when this template's data satisfies the strict renderer contract."""
+    from .media.scene_data import SCENE_DATA_MODELS, validate_scene_data
+
+    if template not in SCENE_DATA_MODELS:
+        return True
+    try:
+        validate_scene_data(template, data)
+    except (ValueError, TypeError):
+        return False
+    return True
+
+
 def _normalize_scene(raw: Any, index: int, fps: int) -> dict[str, Any]:
     if not isinstance(raw, dict):
         raise ValueError(f"scene {index} is not an object: {type(raw).__name__}")
@@ -360,7 +572,9 @@ def _normalize_scene(raw: Any, index: int, fps: int) -> dict[str, Any]:
                 merged[key] = raw[key]
         scene["data"] = normalize_illustration(merged)
     elif isinstance(data, dict):
-        scene["data"] = data
+        normalizer = _STRUCTURED_NORMALIZERS.get(scene["template"])
+        # Unknown keys from a model must never reach the strict renderer contract.
+        scene["data"] = normalizer(data) if normalizer else data
     return scene
 
 
@@ -373,6 +587,52 @@ def _cue_time(cue: dict[str, Any], ms_keys: tuple[str, ...], sec_keys: tuple[str
     if sec is None:
         return None
     return int(sec * 1000) if sec < 600 else int(sec)
+
+
+def _normalize_music(raw: Any) -> dict[str, Any] | None:
+    """Keep only a music block that names a licensed local asset.
+
+    Models invent descriptors such as {"mood": "curious", "intensity": 0.35}. No
+    manifest asset exists for a mood, so such a block is dropped instead of being
+    persisted as a reference the asset stage cannot resolve.
+    """
+    if not isinstance(raw, dict):
+        return None
+    asset_ref = _first(raw, ("assetRef", "asset_ref", "id"))
+    if not isinstance(asset_ref, str) or not asset_ref.strip():
+        return None
+    music: dict[str, Any] = {"assetRef": asset_ref.strip()}
+    volume = _float(_first(raw, ("volume", "gain", "level")))
+    if volume is not None:
+        music["volume"] = max(0.0, min(volume, 1.0))
+    if isinstance(raw.get("loop"), bool):
+        music["loop"] = raw["loop"]
+    return music
+
+
+def clamp_text_frames(scene: dict[str, Any]) -> None:
+    """Keep every text element's frames inside the scene it belongs to.
+
+    A model's in/out frames are advisory guesses against a duration it also
+    guessed. Timing is owned by the orchestrator, so any later re-timing (word
+    estimate or measured narration) must re-clamp them: a stale outFrame hides
+    the text mid-scene, and the draft reviewer rightly calls that a bug.
+    """
+    duration = scene.get("durationInFrames")
+    if not isinstance(duration, int) or duration <= 0:
+        return
+    for element in scene.get("text") or []:
+        if not isinstance(element, dict):
+            continue
+        start = element.get("inFrame")
+        end = element.get("outFrame")
+        if isinstance(start, int) and not 0 <= start < duration:
+            element["inFrame"] = max(0, min(start, duration - 1))
+        if isinstance(end, int) and not 0 < end <= duration:
+            element["outFrame"] = max(1, min(end, duration))
+        if (isinstance(element.get("inFrame"), int) and isinstance(element.get("outFrame"), int)
+                and element["outFrame"] <= element["inFrame"]):
+            element.pop("outFrame", None)
 
 
 def _normalize_subtitles(raw: Any) -> list[dict[str, Any]]:
@@ -441,11 +701,27 @@ def normalize_storyboard(
         raise ValueError("storyboard payload contains no scenes")
 
     scenes = [_normalize_scene(item, i, fps) for i, item in enumerate(scenes_raw)]
+    for scene in scenes:
+        if _renderable(scene["template"], scene.get("data")):
+            continue
+        completed = _complete_structural_data(scene["template"], scene.get("data") or {}, scene)
+        if completed is not None and _renderable(scene["template"], completed):
+            scene["data"] = completed
+            continue
+        # A model that ignored the template contract must not fail the whole job.
+        # Fall back to the one template that needs no structured data, keeping the
+        # narration and text the model did produce. Numbers are never invented.
+        scene["template"] = "KineticTypography"
+        scene.pop("data", None)
     # deterministic sequential timing; gaps/overlaps are the orchestrator's job
     cursor = 0
     for scene in scenes:
         scene["startFrame"] = cursor
         cursor += scene["durationInFrames"]
+        # A model's in/out frames are advisory and frequently fall outside the
+        # scene it wrote them for, which makes text vanish mid-scene. Timing is
+        # owned by the orchestrator, so clamp them to the scene's own duration.
+        clamp_text_frames(scene)
 
     out: dict[str, Any] = {
         "id": str(_first(data, ("id", "storyboardId", "jobId"), fallback_id) or fallback_id),
@@ -462,8 +738,8 @@ def normalize_storyboard(
     narration = data.get("narration")
     if isinstance(narration, dict):
         out["narration"] = narration
-    music = _first(data, ("backgroundMusic", "music", "bgm"))
-    if isinstance(music, dict):
+    music = _normalize_music(_first(data, ("backgroundMusic", "music", "bgm")))
+    if music is not None:
         out["backgroundMusic"] = music
     watermark = data.get("watermark")
     if isinstance(watermark, dict):

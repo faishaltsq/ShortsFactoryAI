@@ -78,6 +78,9 @@ class RenderAgent:
             scene.pop("audio", None)
         props_path = job_dir / "render-props.json"
         atomic_json(props_path, {"storyboard": props})
+        # Remotion runs with cwd=packages/video, so a relative job directory would
+        # resolve the props file against the wrong root and fail to parse.
+        props_arg = "--props=" + str(props_path.resolve())
         partial = checked_path(job_dir, "output.partial.mp4")
         parser = RemotionProgress(storyboard.total_frames)
 
@@ -86,8 +89,8 @@ class RenderAgent:
                 if progress is not None:
                     progress(update)
 
-        run_checked(["node", str(cli), "render", "src/index.ts", "Short", str(partial),
-                     "--props=" + str(props_path), "--public-dir=" + str(job_dir), "--codec=h264", "--pixel-format=yuv420p", "--color-space=bt709", "--concurrency=2",
+        run_checked(["node", str(cli), "render", "src/index.ts", "Short", str(partial.resolve()),
+                     props_arg, "--public-dir=" + str(job_dir.resolve()), "--codec=h264", "--pixel-format=yuv420p", "--color-space=bt709", "--concurrency=2",
                      "--port=" + str(free_remotion_port())],
                     cwd=self.video_dir, log_path=job_dir / "render.log", timeout=900, cancelled=cancelled,
                     on_output=observe if progress is not None else None)

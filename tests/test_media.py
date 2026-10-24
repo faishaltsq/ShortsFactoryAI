@@ -97,3 +97,56 @@ def test_video_validation_rejects_missing_audio():
                           "r_frame_rate": "30/1"}], "format": {"duration": "35"}}
     with pytest.raises(ValueError, match="audio"):
         validate_probe(probe, expected_frames=1050, fps=30, width=1080, height=1920)
+
+
+def test_measured_retime_reclamps_text_frames_it_shrank():
+    """A draft outFrame is a guess against the estimated duration.
+
+    Measured narration rewrites durationInFrames; keeping the draft's outFrame
+    would hide the text mid-scene and make the draft reviewer fail the job after
+    the render already exists.
+    """
+    from packages.core.media.audio import timeline_from_audio
+    from packages.core.schemas import TextElementSpec
+
+    board = Storyboard(id="retime", scenes=[
+        SceneSpec(sceneId="long", template="KineticTypography", segment="Satu.", durationInFrames=600,
+                  text=[TextElementSpec(id="t1", text="Judul", style={"role": "title"},
+                                        inFrame=12, outFrame=560)]),
+    ])
+    timed = timeline_from_audio(board, [1500.0], [[{"text": "Satu.", "startMs": 0, "endMs": 900}]])
+    scene = timed.scenes[0]
+    assert scene.durationInFrames == 45
+    assert scene.text[0].outFrame == 45, "text must be clamped into the measured scene"
+
+
+def test_review_fingerprint_ignores_the_timing_the_reviewer_may_not_judge():
+    """Measured narration rewrites durations; the review must survive that.
+
+    The reviewer is told to ignore duration and subtitle sync, so binding its
+    verdict to those fields turned a correct pass into a stale review and a
+    second, failing run after the render already existed.
+    """
+    from packages.core.approval import review_fingerprint
+
+    script = {"title": "Uji", "segments": [{"kind": "hook", "text": "Halo."}]}
+    draft = {"id": "sb", "scenes": [{"sceneId": "s1", "segment": "Halo.", "startFrame": 0,
+                                     "durationInFrames": 300,
+                                     "text": [{"id": "t1", "text": "Halo", "inFrame": 10, "outFrame": 200}]}],
+             "subtitles": [{"id": "c1", "text": "Halo.", "startMs": 0, "endMs": 1000}]}
+    timed = {"id": "sb", "scenes": [{"sceneId": "s1", "segment": "Halo.", "startFrame": 0,
+                                     "durationInFrames": 139,
+                                     "text": [{"id": "t1", "text": "Halo", "inFrame": 8, "outFrame": 105}]}],
+             "subtitles": [{"id": "c1", "text": "Halo.", "startMs": 0, "endMs": 900}]}
+
+    assert review_fingerprint(script, draft) == review_fingerprint(script, timed)
+
+
+def test_review_fingerprint_still_tracks_a_content_change():
+    from packages.core.approval import review_fingerprint
+
+    script = {"title": "Uji", "segments": [{"kind": "hook", "text": "Halo."}]}
+    first = {"id": "sb", "scenes": [{"sceneId": "s1", "segment": "Halo.", "durationInFrames": 300}]}
+    edited = {"id": "sb", "scenes": [{"sceneId": "s1", "segment": "Halo dunia.", "durationInFrames": 300}]}
+
+    assert review_fingerprint(script, first) != review_fingerprint(script, edited)

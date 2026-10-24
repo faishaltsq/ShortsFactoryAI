@@ -53,3 +53,31 @@ def test_artifact_tersimpan_bisa_dibaca_ulang(tmp_path):
     path.write_text(json.dumps(model.model_dump(mode="json", by_alias=True)), encoding="utf-8")
     again = DraftQualityArtifact.model_validate(json.loads(path.read_text(encoding="utf-8")))
     assert again.overall == model.overall
+
+
+def test_overall_is_derived_when_the_model_omits_it():
+    """Regression: a live draft review arrived without `overall` and failed the job.
+
+    The verdict is derivable from the three sections, so the contract computes it
+    instead of rejecting the review. Nothing is ever upgraded to a pass.
+    """
+    data = _sample()
+    data.pop("overall")
+    assert DraftQualityArtifact.model_validate(data).overall == "fail"
+
+    passing = {"technical": {"pass": True}, "editorial": {"pass": True},
+               "factual": {"pass": True}, "unsupported_claims": []}
+    assert DraftQualityArtifact.model_validate(passing).overall == "pass"
+
+
+def test_explicit_overall_is_never_overridden():
+    data = _sample()
+    data["overall"] = "warn"
+    assert DraftQualityArtifact.model_validate(data).overall == "warn"
+
+
+def test_overall_still_rejects_an_invalid_explicit_value():
+    bad = _sample()
+    bad["overall"] = "maybe"
+    with pytest.raises(Exception):
+        DraftQualityArtifact.model_validate(bad)

@@ -40,6 +40,25 @@ def verify_thumbnail(artifact: ThumbnailArtifact, storyboard: Storyboard, metada
         raise ValueError("thumbnail could not be decoded as vertical PNG")
 
 
+def wide_thumbnail(source: Path, target: Path) -> Path:
+    """Buat varian 1280x720 untuk YouTube dari PNG 1080x1920 yang ada.
+
+    YouTube memakai thumbnail 16:9 di player dan daftar video. Crop tengah akan
+    memotong headline yang berada di bawah, jadi latar 9:16 dipertahankan utuh dan
+    sisinya diisi versi blur dari gambar yang sama.
+    """
+    run_checked(["ffmpeg", "-v", "error", "-y", "-i", str(source),
+                 "-filter_complex",
+                 "[0:v]scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720,boxblur=40:2[bg];"
+                 "[0:v]scale=1280:720:force_original_aspect_ratio=decrease[fg];"
+                 "[bg][fg]overlay=(W-w)/2:(H-h)/2",
+                 "-frames:v", "1", str(target)],
+                log_path=target.with_suffix(".log"))
+    if not target.is_file() or target.stat().st_size == 0:
+        raise ValueError("thumbnail_render_failed")
+    return target
+
+
 class ThumbnailAgent:
     def __init__(self, video_dir: Path | None = None) -> None:
         self.video_dir = video_dir or PROJECT_ROOT / "packages/video"

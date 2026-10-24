@@ -237,6 +237,14 @@ class Storyboard(BaseModel):
     backgroundMusic: dict[str, Any] | None = None
     watermark: dict[str, Any] | None = None
 
+    @field_validator("backgroundMusic")
+    @classmethod
+    def _background_music(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
+        if value is not None:
+            from .media.scene_data import BackgroundMusicSpec
+            BackgroundMusicSpec.model_validate(value)
+        return value
+
     @field_validator("scenes")
     @classmethod
     def _contiguous_timing(cls, v: list[SceneSpec]) -> list[SceneSpec]:

@@ -48,3 +48,16 @@ def test_script_requires_hook():
 def test_subtitle_ordering():
     with pytest.raises(ValidationError):
         SubtitleCue(id="s", text="x", startMs=1000, endMs=1000)
+
+
+def test_storyboard_rejects_music_that_names_no_asset():
+    """The contract must fail where the block is written, not three stages later."""
+    with pytest.raises(ValidationError):
+        Storyboard(id="x", backgroundMusic={"mood": "curious", "intensity": 0.35},
+                   scenes=[_scene("s1", 0, 300)])
+
+
+def test_storyboard_accepts_a_licensed_music_reference():
+    sb = Storyboard(id="x", backgroundMusic={"assetRef": "bgm-01", "volume": 0.2},
+                    scenes=[_scene("s1", 0, 300)])
+    assert sb.backgroundMusic == {"assetRef": "bgm-01", "volume": 0.2}
