@@ -18,6 +18,9 @@ from .transport import SafeHTTP, safe_json
 
 UPLOAD_ENDPOINT = "https://www.googleapis.com/upload/youtube/v3/videos"
 VIDEOS_ENDPOINT = "https://www.googleapis.com/youtube/v3/videos"
+THUMBNAIL_ENDPOINT = "https://www.googleapis.com/upload/youtube/v3/thumbnails/set"
+CHANNEL_ENDPOINT = "https://www.googleapis.com/youtube/v3/channels"
+THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024
 CHUNK_UNIT = 256 * 1024
 
 
@@ -146,3 +149,35 @@ class YouTubeHTTPAdapter:
         self.transport.request("PUT", VIDEOS_ENDPOINT, retry_safe=False, accepted=(200,),
                                params={"part": "status"}, headers=self._headers(),
                                json={"id": video.video_id, "status": status})
+
+    def set_thumbnail(self, video_id: str, image: bytes, *, allow_upload: bool) -> None:
+        if allow_upload is not True:
+            raise PublishingError("upload_permission_required")
+        if not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id):
+            raise RemoteError("remote_video_id_invalid")
+        if not image or len(image) > THUMBNAIL_MAX_BYTES:
+            raise PublishingError("thumbnail_too_large")
+        mime = ("image/png" if image[:8] == b"\x89PNG\r\n\x1a\n"
+                else "image/jpeg" if image[:3] == b"\xff\xd8\xff" else "")
+        if not mime:
+            raise PublishingError("thumbnail_type_invalid")
+        # Ambiguous media writes are never blindly replayed; a lost response needs operator
+        # reconciliation, exactly like the resumable video initiation above.
+        self.transport.request("POST", THUMBNAIL_ENDPOINT, retry_safe=False, accepted=(200, 201),
+                               params={"videoId": video_id, "uploadType": "media"},
+                               headers={**self._headers(), "Content-Type": mime}, content=image)
+
+    def read_channel(self, *, allow_read: bool) -> dict[str, str]:
+        if allow_read is not True:
+            raise PublishingError("read_permission_required")
+        response = self.transport.request("GET", CHANNEL_ENDPOINT, retry_safe=True, accepted=(200,),
+                                          params={"part": "snippet", "mine": "true"},
+                                          headers=self._headers())
+        items = safe_json(response).get("items")
+        if not isinstance(items, list) or len(items) != 1 or not isinstance(items[0], dict):
+            raise RemoteError("remote_channel_invalid")
+        channel = items[0]
+        snippet = channel.get("snippet") or {}
+        if not isinstance(channel.get("id"), str) or not isinstance(snippet.get("title"), str):
+            raise RemoteError("remote_channel_invalid")
+        return {"id": channel["id"], "title": snippet["title"]}

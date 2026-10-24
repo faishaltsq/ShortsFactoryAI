@@ -33,12 +33,15 @@ class PublishingArtifact(BaseModel):
     checked_at: datetime | None = None
     retry_count: int = Field(ge=0, le=5, default=0)
     error_code: str | None = Field(default=None, pattern="^[a-z_]{1,64}$")
+    thumbnail_sha256: str | None = Field(default=None, pattern="^[0-9a-f]{64}$")
+    thumbnail_uploaded_at: datetime | None = None
 
     @model_validator(mode="after")
     def consistent(self) -> PublishingArtifact:
         if self.offset > self.total_bytes:
             raise ValueError("offset_out_of_bounds")
-        for stamp in (self.publish_at, self.requested_publish_at, self.authorized_at, self.checked_at):
+        for stamp in (self.publish_at, self.requested_publish_at, self.authorized_at, self.checked_at,
+                      self.thumbnail_uploaded_at):
             if stamp is not None and (stamp.tzinfo is None or stamp.utcoffset() is None):
                 raise ValueError("timezone_required")
         if self.phase in ("private", "scheduled", "published") and (not self.video_id or not self.checked_at):

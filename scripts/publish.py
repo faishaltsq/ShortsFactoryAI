@@ -23,8 +23,10 @@ def _arguments(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="YouTube operator commands (private-upload first)")
     actions = parser.add_mutually_exclusive_group(required=True)
     actions.add_argument("--connect", action="store_true", help="explicitly open installed-app OAuth in system browser")
+    actions.add_argument("--check", action="store_true", help="verify OAuth client, token, scope and channel without uploading")
     actions.add_argument("--status", metavar="JOB_ID", help="local status only; no Google request or refresh")
     actions.add_argument("--upload", metavar="JOB_ID", help="upload approved live media privately, or resume its session")
+    actions.add_argument("--thumbnail", metavar="JOB_ID", help="upload or retry only the 16:9 thumbnail for a private upload")
     actions.add_argument("--schedule", metavar="JOB_ID", help="separately authorize future publication")
     actions.add_argument("--publish-now", metavar="JOB_ID", help="separately authorize public status now")
     actions.add_argument("--reconcile", metavar="JOB_ID", help="read exact remote video; never reinsert/update")
@@ -42,7 +44,7 @@ def _arguments(argv: list[str] | None) -> argparse.Namespace:
     synthetic.add_argument("--synthetic-media", dest="synthetic_media", action="store_const", const=True, default=None)
     synthetic.add_argument("--no-synthetic-media", dest="synthetic_media", action="store_const", const=False)
     args = parser.parse_args(argv)
-    job_id = args.status or args.upload or args.schedule or args.publish_now or args.reconcile
+    job_id = args.status or args.upload or args.thumbnail or args.schedule or args.publish_now or args.reconcile
     if job_id and not re.fullmatch(r"[0-9a-f]{16}", job_id):
         parser.error("invalid_job_id")
     if args.schedule or args.publish_now or args.reconcile:
@@ -85,7 +87,7 @@ def main(argv: list[str] | None = None, *, http_factory: Callable | None = None,
 
         import httpx
         from packages.core.publishing.loopback import run_loopback
-        from packages.core.publishing.oauth import InstalledClient, OAuthFlow, TokenManager
+        from packages.core.publishing.oauth import YOUTUBE_SCOPE, InstalledClient, OAuthFlow, TokenManager
         from packages.core.publishing.secure import ProtectedStore
         from packages.core.publishing.service import PublishingService
         from packages.core.publishing.youtube import YouTubeHTTPAdapter
@@ -94,6 +96,11 @@ def main(argv: list[str] | None = None, *, http_factory: Callable | None = None,
         installed = InstalledClient.from_store(protected)
         factory = http_factory or (lambda: httpx.Client(timeout=20, trust_env=False, follow_redirects=False))
         with factory() as http:
+            if args.check:
+                adapter = YouTubeHTTPAdapter(http, TokenManager(installed, protected, http), allow_network=True)
+                print(json.dumps({"client": "ok", "channel": adapter.read_channel(allow_read=True),
+                                  "scope": YOUTUBE_SCOPE}, ensure_ascii=False))
+                return 0
             if args.connect:
                 import webbrowser
                 run_loopback(OAuthFlow(installed, protected, http), allow_connect=True,
@@ -106,6 +113,11 @@ def main(argv: list[str] | None = None, *, http_factory: Callable | None = None,
             if args.upload:
                 result = service.upload_private(args.upload, UploadOptions(category_id=args.category_id,
                     made_for_kids=args.made_for_kids, contains_synthetic_media=args.synthetic_media), allow_upload=True)
+            elif args.thumbnail:
+                result = service.upload_thumbnail(args.thumbnail, allow_upload=True)
+                if result.error_code is not None:
+                    print(json.dumps({"error": result.error_code}), file=sys.stderr)
+                    return 1
             elif args.schedule:
                 result = service.schedule(args.schedule, publish_at=args.publish_at, confirm=args.confirm,
                                           operator=args.operator, allow_schedule=True)

@@ -17,6 +17,10 @@ from .secure import ProtectedStore
 from .transport import SafeHTTP, safe_json
 
 AUTHORIZATION_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth"
+# Downloaded client secrets still carry the v1 authorization URI. Both are the
+# same Google consent screen; the adapter always builds its own URL, so this is a
+# shape check, not a redirect target.
+AUTHORIZATION_ENDPOINTS = frozenset({AUTHORIZATION_ENDPOINT, "https://accounts.google.com/o/oauth2/auth"})
 TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
 # videos.update does not accept youtube.upload; this is the common documented scope.
 YOUTUBE_SCOPE = "https://www.googleapis.com/auth/youtube.force-ssl"
@@ -36,7 +40,7 @@ class InstalledClient:
         installed = data.get("installed")
         if not isinstance(installed, dict) or not _secret_string(installed.get("client_id")):
             raise PublishingError("installed_client_required")
-        if installed.get("auth_uri", AUTHORIZATION_ENDPOINT) != AUTHORIZATION_ENDPOINT:
+        if installed.get("auth_uri", AUTHORIZATION_ENDPOINT) not in AUTHORIZATION_ENDPOINTS:
             raise PublishingError("installed_client_endpoint_invalid")
         if installed.get("token_uri", TOKEN_ENDPOINT) != TOKEN_ENDPOINT:
             raise PublishingError("installed_client_endpoint_invalid")

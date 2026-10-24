@@ -22,6 +22,8 @@ Tidak ada parameter client secret, access token, refresh token, atau signed uplo
 
 Scope yang diminta adalah `https://www.googleapis.com/auth/youtube.force-ssl`: scope ini didokumentasikan untuk insert dan status update. `youtube.upload` saja tidak cukup untuk `videos.update`.
 
+JSON yang diunduh dari Google masih membawa `auth_uri` versi v1 (`https://accounts.google.com/o/oauth2/auth`) sementara adapter membangun URL consent v2 sendiri. Keduanya diterima sebagai bentuk file yang sah; `auth_uri` dari file tidak pernah dipakai sebagai target redirect. `token_uri` harus tetap `https://oauth2.googleapis.com/token` dan tipe file harus `installed`, bukan `web`. Memasang file tidak memerlukan penyalinan manual: `ProtectedStore.write("client", ...)` menulis atomik lalu mengunci permission.
+
 ## Perintah eksplisit
 
 Contoh berikut adalah dokumentasi, **bukan perintah yang sudah dijalankan**:
@@ -30,12 +32,19 @@ Contoh berikut adalah dokumentasi, **bukan perintah yang sudah dijalankan**:
 # Satu-satunya perintah yang membuka browser dan memulai OAuth.
 uv run python scripts/publish.py --connect
 
+# Preflight: baca channel dan scope tanpa upload. Butuh client.json + tokens.json.
+uv run python scripts/publish.py --check
+
 # Lokal saja; tidak me-refresh token atau menghubungi Google.
 uv run python scripts/publish.py --status JOB_ID
 
 # Hanya job live APPROVED dengan approval yang masih sesuai media/artifact.
 # Category/kids/synthetic disclosure wajib dipilih operator.
+# Thumbnail 16:9 ikut diunggah setelah read-back private terverifikasi.
 uv run python scripts/publish.py --upload JOB_ID --category-id 22 --not-made-for-kids --synthetic-media
+
+# Hanya mengunggah/mengulang thumbnail 16:9 untuk upload private yang sudah ada.
+uv run python scripts/publish.py --thumbnail JOB_ID
 
 # Terpisah dari approval/upload; waktu ber-offset timezone, minimum 2 menit ke depan.
 uv run python scripts/publish.py --schedule JOB_ID --publish-at '2027-01-01T18:00:00+07:00' --confirm --by operator
@@ -67,6 +76,12 @@ Sebelum insert, fase `initiating` ditulis. Setelah session URI diterima, URI dis
 Setelah final PUT, remote ID ditulis sebelum `videos.list(part=status,id=EXACT_ID)`. PRIVATE_UPLOAD baru dinyatakan setelah ID, privacy private tanpa publishAt, upload status, dan media/approval cocok. Perintah upload ulang dengan remote ID hanya membaca ulang video, tidak membuat insert baru.
 
 Response insert hilang, URI hilang/expired, offset invalid/no-progress berulang, atau hasil remote yang tak dapat dipastikan akan berhenti untuk rekonsiliasi manual, bukan membuat video baru. Marker `scheduling`/`publishing` yang tersisa juga tidak mengulang update otomatis: gunakan `--reconcile`. Jika video ID belum diketahui, operator harus menemukan dan mencocokkan video manual terlebih dahulu; API tidak menyediakan checksum media upload yang dapat membuktikan kecocokan otomatis. Tidak ada reset otomatis maupun fallback blind reinsert.
+
+## Thumbnail
+
+`thumbnail.png` hasil render adalah 1080x1920, sedangkan thumbnail YouTube 16:9. `wide_thumbnail` di `packages/core/media/thumbnail.py` membuat varian 1280x720 sekali ke `thumbnail-wide.png`: latar 9:16 dipertahankan utuh dan sisinya diisi versi blur dari gambar yang sama, bukan crop tengah yang akan memotong headline di bagian bawah. Hasilnya diunggah lewat `thumbnails.set` (`uploadType=media`) setelah read-back private terverifikasi.
+
+Thumbnail bersifat opsional dan tidak pernah menggagalkan upload video. Bila gambar hilang, hash tidak cocok, transcode gagal, atau Google menolak, `publishing.json` menyimpan `error_code='thumbnail_upload_failed'` dan video tetap `phase='private'`. `--thumbnail JOB_ID` hanya mengulang langkah gambar itu; ia menolak job yang belum punya upload private terverifikasi dan keluar 1 bila unggahan gambar masih gagal. `thumbnail_sha256` dan `thumbnail_uploaded_at` hanya terisi setelah unggahan gambar berhasil.
 
 Scheduling mengirim `privacyStatus='private'` dan `publishAt` UTC secara eksplisit; read-back harus sama. Publish-now mengirim `privacyStatus='public'` setelah konfirmasi terpisah; read-back harus public sebelum state PUBLISHED. Nilai status writable lain dipertahankan dari read-back sebelum update.
 
