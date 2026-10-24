@@ -91,25 +91,61 @@ class BudgetConfig:
         return self.max_daily_tokens is None and self.max_daily_cost_usd is None
 
 
-def _deepseek_key() -> str:
-    key = os.environ.get("DEEPSEEK_API_KEY", "")
-    if key:
-        return key
-    base = urlsplit(os.environ.get("DEEPSEEK_BASE_URL", ""))
-    if base.scheme == "http" and base.hostname == "localhost" and base.port == 20128 and not base.username and not base.password:
-        # Local router shares the Hermes-managed key. Never read it anywhere else.
-        return os.environ.get("HERMES_CUSTOM_LOCALHOST_20128_API_KEY", "")
+def _read_env_value(path: Path, name: str) -> str:
+    """Baca satu nilai dari file .env tanpa menyentuh os.environ."""
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return ""
+    for raw in lines:
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        if key.strip() == name:
+            return value.strip().strip('"').strip("'")
     return ""
 
 
-def _strategist_key() -> str:
-    """Sama seperti worker: key router lokal dipakai, tapi tidak pernah ditulis."""
-    key = os.environ.get("STRATEGIST_API_KEY", "")
+def _is_local_router(parts) -> bool:
+    """Router LLM lokal: http://localhost:20128, tanpa kredensial di URL."""
+    return (
+        parts.scheme == "http"
+        and parts.hostname == "localhost"
+        and parts.port == 20128
+        and not parts.username
+        and not parts.password
+    )
+
+
+def _hermes_router_key() -> str:
+    """Kunci router lokal milik Hermes.
+
+    `HERMES_CUSTOM_LOCALHOST_20128_API_KEY` hanya ada di environment sesi
+    Hermes. Proses yang dijalankan operator sendiri (scripts/run_studio_api.py
+    lewat start-all-servers.bat) tidak mewarisinya, jadi kunci kosong dan setiap
+    panggilan berakhir 401 — sementara katalog model tetap terbaca karena
+    /models tidak butuh auth. Karena itu env dibaca lebih dulu, lalu file .env
+    Hermes dibaca langsung sebagai fallback.
+
+    Hanya dipakai untuk origin router lokal yang persis (lihat _key_status),
+    sehingga kunci ini tidak pernah ikut ke host lain.
+    """
+    key = os.environ.get("HERMES_CUSTOM_LOCALHOST_20128_API_KEY", "")
     if key:
         return key
-    base = urlsplit(os.environ.get("STRATEGIST_BASE_URL", ""))
-    if base.scheme == "http" and base.hostname == "localhost" and base.port == 20128 and not base.username and not base.password:
-        return os.environ.get("HERMES_CUSTOM_LOCALHOST_20128_API_KEY", "")
+    candidates: list[Path] = []
+    explicit = os.environ.get("HERMES_ENV_FILE", "")
+    if explicit:
+        candidates.append(Path(explicit))
+    local_appdata = os.environ.get("LOCALAPPDATA", "")
+    if local_appdata:
+        candidates.append(Path(local_appdata) / "hermes" / ".env")
+    candidates.append(Path.home() / ".hermes" / ".env")
+    for candidate in candidates:
+        value = _read_env_value(candidate, "HERMES_CUSTOM_LOCALHOST_20128_API_KEY")
+        if value:
+            return value
     return ""
 
 
@@ -148,9 +184,8 @@ def _key_status(env_prefix: str, base_url: str) -> tuple[str, bool]:
         return explicit, False
     # Router lokal memakai kunci milik Hermes. Hanya untuk origin yang persis itu.
     target = urlsplit(base_url)
-    if target.scheme == "http" and target.hostname == "localhost" and target.port == 20128 \
-            and not target.username and not target.password:
-        return os.environ.get("HERMES_CUSTOM_LOCALHOST_20128_API_KEY", ""), False
+    if _is_local_router(target):
+        return _hermes_router_key(), False
     return "", False
 
 
@@ -229,6 +264,10 @@ class Settings:
     strategist: StrategistConfig = field(default_factory=StrategistConfig)
     production: ProductionConfig = field(default_factory=ProductionConfig)
     db_path: Path = field(default_factory=lambda: JOBS_DIR / "factory.db")
+    #: Bounded content revision budget per job; exhaustion blocks the job for an operator decision.
+    max_repairs: int = field(default_factory=lambda: max(1, min(5, _int("MAX_REPAIRS", 2))))
+    #: Hard cap on failed runs before the job is blocked instead of retried.
+    max_job_attempts: int = field(default_factory=lambda: max(1, _int("MAX_JOB_ATTEMPTS", 3)))
 
     def ensure_dirs(self) -> None:
         for d in (DATA_DIR, JOBS_DIR, RENDERS_DIR, ASSETS_DIR):

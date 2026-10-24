@@ -121,7 +121,7 @@ def test_enabled_false_mengeluarkan_provider_dari_chain(tmp_path, monkeypatch):
     assert settings.deepseek.configured is False
     assert settings.strategist.configured is False
     router = build_router(settings, mock_only=False)
-    assert "deepseek" not in [p.name for p in router.worker_chain]
+    assert "worker-http" not in [p.name for p in router.worker_chain]
     assert "strategist-http" not in [p.name for p in router.strategist_chain]
 
 
@@ -144,7 +144,7 @@ def test_temperature_provider_dipakai_sebagai_default(tmp_path, monkeypatch):
     )))
     get_settings.cache_clear()
     router = build_router(get_settings(), mock_only=False)
-    worker = next(p for p in router.worker_chain if p.name == "deepseek")
+    worker = next(p for p in router.worker_chain if p.name == "worker-http")
     assert worker.temperature == 0.15
 
 
@@ -164,3 +164,56 @@ def test_override_tidak_menyimpan_rahasia(tmp_path, monkeypatch):
     )))
     raw = (tmp_path / "studio.json").read_text(encoding="utf-8")
     assert "api_key" not in raw and "API_KEY" not in raw
+
+
+def test_kunci_router_dibaca_dari_file_env_hermes(tmp_path, monkeypatch):
+    """Proses yang dijalankan operator tidak mewarisi env sesi Hermes.
+
+    start-all-servers.bat menjalankan API lewat cmd, jadi
+    HERMES_CUSTOM_LOCALHOST_20128_API_KEY tidak ada di environment. Tanpa
+    fallback file, kunci kosong, /models tetap 200 (tidak butuh auth), provider
+    tampak sehat, lalu setiap panggilan gagal 401.
+    """
+    _isolate(tmp_path, monkeypatch)
+    hermes_env = tmp_path / "hermes.env"
+    hermes_env.write_text(
+        "SOME_OTHER_KEY=jangan-dipakai\n"
+        "HERMES_CUSTOM_LOCALHOST_20128_API_KEY=kunci-dari-file\n",
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("HERMES_CUSTOM_LOCALHOST_20128_API_KEY", raising=False)
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.setenv("HERMES_ENV_FILE", str(hermes_env))
+    monkeypatch.setenv("DEEPSEEK_BASE_URL", "http://localhost:20128/v1")
+    monkeypatch.setenv("DEEPSEEK_MODEL", "model-router")
+    get_settings.cache_clear()
+    settings = get_settings()
+    assert settings.deepseek.api_key == "kunci-dari-file"
+    assert settings.deepseek.key_origin_mismatch is False
+
+
+def test_kunci_file_env_hermes_tidak_dipakai_untuk_host_lain(tmp_path, monkeypatch):
+    """Fallback file tetap terikat origin: host lain tidak menerima kunci itu."""
+    _isolate(tmp_path, monkeypatch)
+    hermes_env = tmp_path / "hermes.env"
+    hermes_env.write_text("HERMES_CUSTOM_LOCALHOST_20128_API_KEY=kunci-dari-file\n", encoding="utf-8")
+    monkeypatch.delenv("HERMES_CUSTOM_LOCALHOST_20128_API_KEY", raising=False)
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.setenv("HERMES_ENV_FILE", str(hermes_env))
+    monkeypatch.setenv("DEEPSEEK_BASE_URL", "https://api.example.com/v1")
+    get_settings.cache_clear()
+    assert get_settings().deepseek.api_key == ""
+
+
+def test_nama_provider_worker_tidak_menyebut_vendor(tmp_path, monkeypatch):
+    """Pesan error tidak boleh menyiratkan vendor yang tidak dipakai.
+
+    Endpoint worker bisa diarahkan ke model apa pun dari UI. Nama "deepseek"
+    membuat error 401 terbaca seolah trafiknya ke DeepSeek.
+    """
+    _isolate(tmp_path, monkeypatch)
+    monkeypatch.setenv("DEEPSEEK_BASE_URL", "http://localhost:20128/v1")
+    monkeypatch.setenv("DEEPSEEK_MODEL", "model-router")
+    get_settings.cache_clear()
+    router = build_router(get_settings(), mock_only=False)
+    assert [p.name for p in router.worker_chain] == ["worker-http", "mock"]
