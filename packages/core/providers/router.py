@@ -258,7 +258,10 @@ def build_router(settings: Settings | None = None, *, job_id: str | None = None,
     if settings.deepseek.configured:
         worker_chain.append(
             OpenAICompatProvider(
-                name="deepseek",
+                # Nama netral, bukan "deepseek": endpoint worker bisa diarahkan
+                # ke model apa pun lewat UI, dan nama lama membuat pesan error
+                # menyebut DeepSeek padahal request-nya ke router lokal.
+                name="worker-http",
                 base_url=settings.deepseek.base_url,
                 api_key=settings.deepseek.api_key,
                 model=settings.deepseek.model,

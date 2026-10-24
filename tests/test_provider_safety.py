@@ -40,3 +40,33 @@ def test_health_requires_configured_model_in_catalog(monkeypatch):
 
     monkeypatch.setattr(adapter.httpx, "get", lambda *a, **kw: httpx.Response(200, json={"data": [{"id": "other-model"}]}))
     assert _provider().healthy() is False
+
+
+def test_pesan_error_menyebut_apakah_kunci_terkirim(monkeypatch):
+    """401 harus bisa dibedakan: kunci salah vs kunci tidak terkirim.
+
+    Kasus nyata: base_url sudah benar, model sudah benar, tapi kunci kosong
+    karena env tidak diwariskan. Pesan lama hanya "HTTP 401 from deepseek"
+    sehingga tidak ada petunjuk ke arah mana pun.
+    """
+    import packages.core.providers.openai_compat as adapter
+
+    monkeypatch.setattr(adapter.httpx, "post", lambda *a, **kw: httpx.Response(401))
+    without_key = OpenAICompatProvider(
+        name="worker-http", base_url="http://localhost:20128/v1",
+        api_key="", model="m", max_retries=1,
+    )
+    with pytest.raises(ProviderError) as caught:
+        without_key.complete(task="script", system="s", user="u")
+    assert "tanpa api key" in str(caught.value)
+    assert "localhost:20128" in str(caught.value)
+
+    with_key = OpenAICompatProvider(
+        name="worker-http", base_url="http://localhost:20128/v1",
+        api_key="unit-test-credential", model="m", max_retries=1,
+    )
+    with pytest.raises(ProviderError) as caught2:
+        with_key.complete(task="script", system="s", user="u")
+    assert "api key terkirim" in str(caught2.value)
+    # Kunci tetap tidak boleh ikut tercetak.
+    assert "unit-test-credential" not in str(caught2.value)

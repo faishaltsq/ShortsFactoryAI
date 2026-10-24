@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import time
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -36,6 +37,36 @@ class OpenAICompatProvider:
     @property
     def _endpoint(self) -> str:
         return f"{self.base_url}/chat/completions"
+
+    def _target(self) -> str:
+        """Host tujuan untuk pesan error. Tanpa kredensial, tanpa query."""
+        parts = urlsplit(self.base_url)
+        host = parts.hostname or "?"
+        if parts.port:
+            host = f"{host}:{parts.port}"
+        return host
+
+    def _describe(self) -> str:
+        """`nama (host, tanpa api key)` — konteks yang membuat 401 bisa didiagnosis.
+
+        Tanpa ini pesan error hanya menyebut nama provider, dan operator tidak
+        bisa membedakan "kunci salah" dari "kunci tidak terkirim sama sekali" —
+        persis kasus yang membuat 401 berulang meski base_url sudah benar.
+        """
+        return f"{self.name} ({self._target()}, {'api key terkirim' if self._api_key else 'tanpa api key'})"
+
+    def _upstream_reason(self, body: str) -> str:
+        """Alasan dari upstream, dibersihkan: tanpa kunci, tanpa baris baru, dipotong.
+
+        Body error sering memuat sebab yang bisa ditindaklanjuti ("usage limit
+        reached, reset after 18m"), tapi juga bisa memantulkan kredensial. Kunci
+        diganti penanda, panjang dibatasi, dan hanya satu baris supaya pesan
+        tetap aman dibaca di UI maupun log.
+        """
+        if self._api_key and self._api_key in body:
+            body = body.replace(self._api_key, "[redacted]")
+        text = " ".join(body.split())
+        return text[:240]
 
     def _headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
@@ -82,15 +113,22 @@ class OpenAICompatProvider:
                 raise ProviderError(last_error, provider=self.name, retryable=True) from exc
 
             if resp.status_code >= 500 or resp.status_code == 429:
-                last_error = f"HTTP {resp.status_code} from {self.name}"
+                reason = self._upstream_reason(resp.text)
+                last_error = f"HTTP {resp.status_code} from {self._describe()}"
+                if reason:
+                    last_error = f"{last_error}: {reason}"
                 if attempt < self.max_retries:
                     time.sleep(min(2**attempt, 15))
                     continue
                 raise ProviderError(last_error, provider=self.name, retryable=True)
 
             if resp.status_code >= 400:
+                reason = self._upstream_reason(resp.text)
+                detail = f"HTTP {resp.status_code} from {self._describe()}"
+                if reason:
+                    detail = f"{detail}: {reason}"
                 raise ProviderError(
-                    f"HTTP {resp.status_code} from {self.name}",
+                    detail,
                     provider=self.name,
                     retryable=False,
                 )
